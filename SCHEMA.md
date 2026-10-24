@@ -1,6 +1,6 @@
 # Database schema
 
-Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Seven tables implemented; five planned.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
+Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Eleven tables implemented; assignments planned.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
 
 ## Conventions
 
@@ -46,12 +46,12 @@ Table columns below extend the common columns.
 
 `role`: `director`, `lead`, `crew`. Any role may have a crew profile. `active` affects staffing eligibility only.
 
-## Planned
+## Mission tables: step 3 implemented; step 4 planned
 
 | Table / introduction | Columns | Essential constraints |
 | --- | --- | --- |
-| `missions` / step 3 | `owner_id uuid`, `title text`, `brief text`, `start timestamptz`, `end timestamptz`, `state mission_state = 'draft'`, `version integer = 1`, `created_at timestamptz = clock_timestamp()` | `UQ(tenant_id,id)`; version ≥ 1; nonblank title; positive interval; owner is creator. |
-| `positions` / step 3 | `mission_id uuid`, `ordinal integer`, `label text`, `removed_at timestamptz?` | `UQ(tenant_id,mission_id,id)`; `UQ(tenant_id,mission_id,ordinal)`; ordinal ≥ 1; nonblank label. |
+| `missions` / step 3 | `owner_id uuid`, `title text`, `brief text`, `start timestamptz`, `end timestamptz`, `state mission_state = 'draft'`, `version integer = 1`, `created_at timestamptz = clock_timestamp()` | `UQ(tenant_id,id)`; version ≥ 1; trimmed title length 1–120, brief ≤ 4000; positive interval; owner is creator. |
+| `positions` / step 3 | `mission_id uuid`, `ordinal integer`, `label text`, `removed_at timestamptz?` | `UQ(tenant_id,mission_id,id)`; `UQ(tenant_id,mission_id,ordinal)`; ordinal ≥ 1; trimmed label length 1–120. |
 | `position_skills` / step 3 | `mission_id uuid`, `position_id uuid`, `skill_id uuid`, `min_proficiency integer` | `PRIMARY KEY(tenant_id,mission_id,position_id,skill_id)`; minimum proficiency 1–5; all requirements must be met. |
 | `assignments` / step 4 | `mission_id uuid`, `position_id uuid`, `crew_id uuid`, `state assignment_state = 'proposed'`, `responded_at timestamptz?`, `booked_start timestamptz?`, `booked_end timestamptz?` | One row per proposal attempt; booking constraints below. |
 | `mission_events` / step 3, extended in steps 4–6 | `mission_id uuid`, `mission_version integer`, `actor_id uuid`, `kind text`, `occurred_at timestamptz = clock_timestamp()`, `payload jsonb` | `UQ(tenant_id,mission_id,mission_version)`; version ≥ 1; `jsonb_typeof(payload) = 'object'`. Append-only. |
@@ -121,10 +121,9 @@ PK/unique/exclusion constraints already supply indexes. Add:
 
 | Implemented | Planned |
 | --- | --- |
-| `sessions(tenant_id,user_id)` | `missions(tenant_id,state,id)` |
-| `crew_skills(tenant_id,skill_id)` | `position_skills(tenant_id,skill_id)` |
-| `availability(tenant_id,crew_id,start)` | `assignments(tenant_id,crew_id,mission_id)` for current/past assignments, including terminal attempts |
-| | `assignments(tenant_id,mission_id,position_id)` across all states for history/FK lookups |
+| `sessions(tenant_id,user_id)`; `crew_skills(tenant_id,skill_id)` | `assignments(tenant_id,crew_id,mission_id)` including terminal attempts |
+| `availability(tenant_id,crew_id,start)` | `assignments(tenant_id,mission_id,position_id)` across all states for history/FK lookups |
+| `missions(tenant_id,state,id)`; `position_skills(tenant_id,skill_id)` | |
 
 Existing unique prefixes cover tenant listings, position order and mission history. Substring search scans tenant rows initially.
 

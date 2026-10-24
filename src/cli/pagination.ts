@@ -5,7 +5,7 @@ type ListOptions = { limit?: string; offset?: string; search?: string };
 export function listOptions(command: Command, search = true) {
   command.option('--limit <number>', 'page size (default 25, maximum 100)')
     .option('--offset <number>', 'start at this offset (default 0)');
-  if (search) command.option('--search <text>', 'literal substring in names/usernames');
+  if (search) command.option('--search <text>', 'literal, case-insensitive substring');
   return command;
 }
 export function query(opts: ListOptions) {

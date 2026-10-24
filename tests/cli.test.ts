@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { readPasswords } from '../src/cli/input.js';
+import { createClient } from '../src/cli/client.js';
 
 describe('CLI input and errors', () => {
   it.each([
@@ -21,5 +22,19 @@ describe('CLI input and errors', () => {
     const stdin = vi.spyOn(process, 'stdin', 'get').mockReturnValue(input as typeof process.stdin);
     try { expect(await readPasswords(['Password'], true)).toEqual(['é']); }
     finally { stdin.mockRestore(); }
+  });
+
+  it.each([
+    ['broken JSON', 200, 'INVALID_RESPONSE'],
+    ['{}', 502, 'API_ERROR'],
+  ])('preserves uncertain-write recovery for unusable responses: %s', async (body, status, code) => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status }));
+    try {
+      const request = createClient('http://127.0.0.1:3000');
+      await expect(request('/missions', 'POST', {})).rejects.toMatchObject({
+        code, recovery: expect.stringContaining('Inspect the relevant list/show command before retrying'),
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { fetch.mockRestore(); }
   });
 });

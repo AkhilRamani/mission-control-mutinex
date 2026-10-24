@@ -8,6 +8,7 @@ import { loginHandler, requireAuthentication, authRoutes } from './auth.js';
 import { organisationRoutes } from './organisation.js';
 import type { Env } from './context.js';
 import { createAuthLimiter } from './rate-limit.js';
+import { missionRoutes } from './missions.js';
 import { crewRoutes } from './crew.js';
 
 type Log = { requestId: string; method: string; route: string; status: number; durationMs: number; actorId?: string; tenantId?: string };
@@ -74,5 +75,6 @@ export function createApp(db: Database, options: { log?: (entry: Log) => void; n
   app.route('/v1', authRoutes(db, limit));
   app.route('/v1', organisationRoutes(db));
   app.route('/v1', crewRoutes(db));
+  app.route('/v1', missionRoutes(db));
   return app;
 }

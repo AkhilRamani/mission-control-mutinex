@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, foreignKey, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 export const role = pgEnum('role', ['director', 'lead', 'crew']);
 
@@ -85,4 +85,77 @@ export const availability = pgTable('availability', {
   foreignKey({ columns: [t.tenantId, t.crewId], foreignColumns: [crew.tenantId, crew.id] }),
   index('availability_tenant_crew_start').on(t.tenantId, t.crewId, t.start),
   check('availability_interval', sql`isfinite(${t.start}) AND isfinite(${t.end}) AND ${t.start} < ${t.end}`),
+]);
+
+export const missionState = pgEnum('mission_state', ['draft', 'submitted', 'approved', 'completed', 'cancelled']);
+
+export const missions = pgTable('missions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull(),
+  ownerId: uuid('owner_id').notNull(),
+  title: text('title').notNull(),
+  brief: text('brief').notNull(),
+  start: timestamp('start', { withTimezone: true }).notNull(),
+  end: timestamp('end', { withTimezone: true }).notNull(),
+  state: missionState('state').notNull().default('draft'),
+  version: integer('version').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+}, (t) => [
+  unique('missions_tenant_id_id').on(t.tenantId, t.id),
+  foreignKey({ columns: [t.tenantId, t.ownerId], foreignColumns: [users.tenantId, users.id] }),
+  index('missions_tenant_state').on(t.tenantId, t.state, t.id),
+  check('mission_title', sql`length(trim(${t.title})) BETWEEN 1 AND 120`),
+  check('mission_brief', sql`length(${t.brief}) <= 4000`),
+  check('mission_interval', sql`isfinite(${t.start}) AND isfinite(${t.end}) AND ${t.start} < ${t.end}`),
+  check('mission_version', sql`${t.version} >= 1`),
+  check('mission_created_finite', sql`isfinite(${t.createdAt})`),
+]);
+
+export const positions = pgTable('positions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull(),
+  missionId: uuid('mission_id').notNull(),
+  ordinal: integer('ordinal').notNull(),
+  label: text('label').notNull(),
+  removedAt: timestamp('removed_at', { withTimezone: true }),
+}, (t) => [
+  unique('positions_tenant_mission_id').on(t.tenantId, t.missionId, t.id),
+  unique('positions_tenant_mission_ordinal').on(t.tenantId, t.missionId, t.ordinal),
+  foreignKey({ columns: [t.tenantId, t.missionId], foreignColumns: [missions.tenantId, missions.id] }),
+  check('position_ordinal', sql`${t.ordinal} >= 1`),
+  check('position_label', sql`length(trim(${t.label})) BETWEEN 1 AND 120`),
+  check('position_removed_finite', sql`${t.removedAt} IS NULL OR isfinite(${t.removedAt})`),
+]);
+
+export const positionSkills = pgTable('position_skills', {
+  tenantId: uuid('tenant_id').notNull(),
+  missionId: uuid('mission_id').notNull(),
+  positionId: uuid('position_id').notNull(),
+  skillId: uuid('skill_id').notNull(),
+  minProficiency: integer('min_proficiency').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.tenantId, t.missionId, t.positionId, t.skillId] }),
+  foreignKey({ columns: [t.tenantId, t.missionId, t.positionId], foreignColumns: [positions.tenantId, positions.missionId, positions.id] }),
+  foreignKey({ columns: [t.tenantId, t.skillId], foreignColumns: [skills.tenantId, skills.id] }),
+  index('position_skills_tenant_skill').on(t.tenantId, t.skillId),
+  check('position_skill_proficiency', sql`${t.minProficiency} BETWEEN 1 AND 5`),
+]);
+
+export const missionEvents = pgTable('mission_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull(),
+  missionId: uuid('mission_id').notNull(),
+  missionVersion: integer('mission_version').notNull(),
+  actorId: uuid('actor_id').notNull(),
+  kind: text('kind').notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+}, (t) => [
+  unique('events_tenant_mission_version').on(t.tenantId, t.missionId, t.missionVersion),
+  foreignKey({ columns: [t.tenantId, t.missionId], foreignColumns: [missions.tenantId, missions.id] }),
+  foreignKey({ columns: [t.tenantId, t.actorId], foreignColumns: [users.tenantId, users.id] }),
+  check('event_version', sql`${t.missionVersion} >= 1`),
+  check('event_time_finite', sql`isfinite(${t.occurredAt})`),
+  check('event_payload_object', sql`jsonb_typeof(${t.payload}) = 'object'`),
+  check('event_kind', sql`${t.kind} IN ('mission_created', 'mission_updated', 'position_added', 'position_updated', 'position_removed')`),
 ]);

@@ -1,0 +1,118 @@
+import { Command, InvalidArgumentError, Option } from 'commander';
+import { z } from 'zod';
+import type { getMission, missionHistory, RequirementInput } from '../domain/missions/planning.js';
+import type { Page } from '../domain/pagination.js';
+import type { CommandContext, Print } from './context.js';
+import { CliError } from './errors.js';
+import { confirmRemoval } from './input.js';
+import { listOptions, listing, query } from './pagination.js';
+
+type StoredMission = Awaited<ReturnType<typeof getMission>>;
+type MissionSummary = Omit<StoredMission, 'start' | 'end' | 'createdAt' | 'positions'> & { start: string; end: string; createdAt: string };
+type Mission = MissionSummary & { positions: (Omit<StoredMission['positions'][number], 'removedAt'> & { removedAt: string | null })[] };
+type History = Omit<Awaited<ReturnType<typeof missionHistory>>, 'items'> & {
+  items: (Omit<Awaited<ReturnType<typeof missionHistory>>['items'][number], 'occurredAt'> & { occurredAt: string })[];
+};
+type Request = Awaited<ReturnType<CommandContext>>['request'];
+const path = (id: string) => `/missions/${encodeURIComponent(id)}`;
+const row = (m: MissionSummary) => `${m.id} | v${m.version} | ${m.state} | ${m.title} | ${m.start} → ${m.end}`;
+const details = (m: Mission) => `${row(m)}\nOwner: ${m.ownerId}\nBrief: ${m.brief || '(empty)'}\nPositions:\n${m.positions.length
+  ? m.positions.map((p) => `${p.id} | #${p.ordinal} ${p.label}${p.removedAt ? ' (removed)' : ''} | ${p.requirements.length
+    ? p.requirements.map((r) => `${r.name}:${r.minProficiency} [${r.skillId}]`).join(', ') : 'no requirements'}`).join('\n') : '(none)'}`;
+
+function reviewedVersion(command: Command) {
+  return command.requiredOption('--version <number>', 'mission version you reviewed with missions show', (value) => {
+    if (!/^[1-9]\d*$/.test(value) || Number(value) > 2147483647) throw new InvalidArgumentError('Expected a positive integer version.');
+    return Number(value);
+  });
+}
+function planOptions(command: Command) {
+  return command.option('--title <text>', 'mission title').option('--brief <text>', 'mission brief; empty string clears it')
+    .option('--start <timestamp>', 'ISO timestamp with Z or offset (inclusive)')
+    .option('--end <timestamp>', 'ISO timestamp with Z or offset (exclusive)');
+}
+
+async function requirements(request: Request, values: string[]) {
+  const result: RequirementInput[] = [];
+  for (const value of values) {
+    const colon = value.lastIndexOf(':');
+    const name = value.slice(0, colon).trim().toLowerCase(), level = value.slice(colon + 1);
+    if (colon < 1 || !name || !/^[1-5]$/.test(level)) {
+      throw new CliError('Invalid requirement.', 'INVALID_ARGUMENT', 'Use --requires piloting:3 medical:2, or skill UUIDs followed by :level (1–5).');
+    }
+    let skillId: string | undefined;
+    if (z.uuid().safeParse(name).success) skillId = name;
+    else {
+      let offset: number | null = 0;
+      do {
+        const page: Page<{ id: string; name: string }> = await request(`/skills?q=${encodeURIComponent(name)}&limit=100&offset=${offset}`);
+        skillId = page.items.find((skill) => skill.name === name)?.id;
+        offset = page.nextOffset;
+      } while (!skillId && offset !== null);
+      if (!skillId) throw new CliError(`Unknown skill: ${name}.`, 'SKILL_NOT_FOUND', 'Run mc skills list and use an exact name or ID.');
+    }
+    if (result.some((r) => r.skillId === skillId)) throw new CliError('Duplicate skill requirement.', 'INVALID_ARGUMENT', 'Specify each skill once.');
+    result.push({ skillId, minProficiency: Number(level) });
+  }
+  return result;
+}
+
+export function registerMissionCommands(program: Command, context: CommandContext, print: Print) {
+  const missions = program.command('missions').description('Plan draft missions; edit using the version you reviewed');
+  listOptions(missions.command('list')).addOption(new Option('--state <state>', 'filter mission state')
+    .choices(['draft', 'submitted', 'approved', 'completed', 'cancelled'])).action(async (opts) => {
+    const { request } = await context();
+    const result = await request<Page<MissionSummary>>(`/missions${query(opts)}${opts.state ? `&state=${opts.state}` : ''}`);
+    print(result, listing(result, row));
+  });
+  missions.command('create').requiredOption('--title <text>', 'mission title').option('--brief <text>', 'mission brief', '')
+    .requiredOption('--start <timestamp>', 'future ISO timestamp with Z or offset (inclusive)')
+    .requiredOption('--end <timestamp>', 'ISO timestamp with Z or offset (exclusive)').action(async (opts) => {
+      const { request } = await context();
+      const result = await request<Mission>('/missions', 'POST', { title: opts.title, brief: opts.brief, start: opts.start, end: opts.end });
+      print(result, details(result));
+    });
+  missions.command('show').requiredOption('--mission <id>', 'mission ID').action(async (opts) => {
+    const { request } = await context();
+    const result = await request<Mission>(path(opts.mission));
+    print(result, details(result));
+  });
+  reviewedVersion(planOptions(missions.command('update').requiredOption('--mission <id>', 'mission ID'))).action(async (opts) => {
+    const { request } = await context();
+    const result = await request<Mission>(path(opts.mission), 'PATCH', { version: opts.version, title: opts.title, brief: opts.brief, start: opts.start, end: opts.end });
+    print(result, details(result));
+  });
+  listOptions(missions.command('history').requiredOption('--mission <id>', 'mission ID'), false).action(async (opts) => {
+    const { request } = await context();
+    const result = await request<History>(`${path(opts.mission)}/history${query(opts)}`);
+    print(result, `Mission ${result.missionId} | current v${result.version}\n${listing(result,
+      (e) => `v${e.missionVersion} | ${e.occurredAt} | ${e.kind} | actor ${e.actorId}\n${JSON.stringify(e.payload, null, 2)}`)}`);
+  });
+
+  const positions = program.command('positions').description('Draft positions and their required skills; mutations return the updated mission');
+  reviewedVersion(positions.command('add').requiredOption('--mission <id>', 'mission ID').requiredOption('--label <text>', 'position label')
+    .option('--requires <skill:level...>', 'exact skill names or IDs, each with minimum proficiency 1–5')).action(async (opts) => {
+    const { request } = await context();
+    const result = await request<Mission>(`${path(opts.mission)}/positions`, 'POST', {
+      version: opts.version, label: opts.label, requirements: await requirements(request, opts.requires ?? []),
+    });
+    print(result, details(result));
+  });
+  reviewedVersion(positions.command('update').requiredOption('--mission <id>', 'mission ID').requiredOption('--position <id>', 'position ID from missions show')
+    .option('--label <text>', 'position label').option('--requires <skill:level...>', 'replace all requirements with these exact skill names or IDs')
+    .addOption(new Option('--clear-requirements', 'remove all requirements').conflicts('requires'))).action(async (opts) => {
+    const { request } = await context();
+    const result = await request<Mission>(`${path(opts.mission)}/positions/${encodeURIComponent(opts.position)}`, 'PATCH', {
+      version: opts.version, label: opts.label,
+      requirements: opts.clearRequirements ? [] : opts.requires ? await requirements(request, opts.requires) : undefined,
+    });
+    print(result, details(result));
+  });
+  reviewedVersion(positions.command('remove').requiredOption('--mission <id>', 'mission ID').requiredOption('--position <id>', 'position ID from missions show')
+    .option('--yes', 'confirm without prompting')).action(async (opts) => {
+    const { request } = await context();
+    await confirmRemoval(`Remove position ${opts.position} from mission ${opts.mission}?`, Boolean(opts.yes));
+    const result = await request<Mission>(`${path(opts.mission)}/positions/${encodeURIComponent(opts.position)}`, 'DELETE', { version: opts.version });
+    print(result, details(result));
+  });
+}

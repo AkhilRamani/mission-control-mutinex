@@ -21,6 +21,8 @@ export function createClient(apiUrl: string, credentials?: Credentials) {
     throw new CliError('Stored session belongs to a different API.', 'API_MISMATCH', 'Log out from its original API before switching servers.');
   }
   return async <T>(path: string, method = 'GET', body?: unknown): Promise<T> => {
+    const recovery = method === 'GET' ? 'Check the server and API URL.'
+      : 'The result may be uncertain. Inspect the relevant list/show command before retrying; writes are never retried automatically.';
     let response: Response;
     try {
       response = await fetch(`${origin}/v1${path}`, {
@@ -30,16 +32,15 @@ export function createClient(apiUrl: string, credentials?: Credentials) {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch {
-      throw new CliError('Could not reach the API.', 'NETWORK_ERROR',
-        method === 'GET' ? 'Check the server and API URL.' : 'The result may be uncertain. Inspect the relevant list/show command before retrying; writes are never retried automatically.');
+      throw new CliError('Could not reach the API.', 'NETWORK_ERROR', recovery);
     }
     let result;
     try { result = await response.json(); } catch {
-      throw new CliError('API returned an invalid response.', 'INVALID_RESPONSE', 'Check the API URL and server.');
+      throw new CliError('API returned an invalid response.', 'INVALID_RESPONSE', recovery);
     }
     if (!response.ok) {
       const parsed = apiError.safeParse(result);
-      if (!parsed.success) throw new CliError(`Request failed (${response.status}).`, 'API_ERROR', 'Check the API URL and server.');
+      if (!parsed.success) throw new CliError(`Request failed (${response.status}).`, 'API_ERROR', recovery);
       const { error } = parsed.data;
       throw new CliError(error.message, error.code, error.recovery, error.requestId);
     }

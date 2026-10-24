@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import { AppError } from '../domain/errors.js';
 
+export const instant = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 export const username = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 export const newPassword = z.string().min(12).max(128);
 export const displayName = z.string().trim().min(1).max(120);

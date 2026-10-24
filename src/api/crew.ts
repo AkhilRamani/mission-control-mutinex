@@ -3,13 +3,12 @@ import { z } from 'zod';
 import type { Database } from '../db/client.js';
 import type { Env } from './context.js';
 import * as crew from '../domain/crew.js';
-import { displayName, pageInput, searchInput, parseInput, readJson } from './validation.js';
+import { displayName, instant, pageInput, searchInput, parseInput, readJson } from './validation.js';
 
 const uuid = z.uuid();
 const crewId = z.union([z.literal('me'), uuid]);
 const profileInput = z.strictObject({ displayName: displayName.optional(), biography: z.string().trim().max(2000).optional(),
   active: z.boolean().optional() }).refine((input) => Object.keys(input).length > 0);
-const instant = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 const intervalInput = z.strictObject({ start: instant, end: instant }).refine((input) => input.start < input.end);
 
 export function crewRoutes(db: Database) {

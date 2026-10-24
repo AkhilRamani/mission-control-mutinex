@@ -15,6 +15,13 @@
       "when": 1792820334416,
       "tag": "0001_many_firelord",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792821601444,
+      "tag": "0002_slimy_baron_strucker",
+      "breakpoints": true
     }
   ]
 }

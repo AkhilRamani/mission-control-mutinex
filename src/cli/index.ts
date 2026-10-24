@@ -3,6 +3,7 @@ import { CliError } from './errors.js';
 import { registerCrewCommands } from './crew.js';
 import { registerAuthCommands } from './auth.js';
 import { registerOrganisationCommands } from './organisation.js';
+import { registerMissionCommands } from './missions.js';
 import { createContext } from './context.js';
 
 const program = new Command().name('mc').description('Mission Control API client')
@@ -19,6 +20,7 @@ const context = createContext(() => program.opts().api);
 registerAuthCommands(program, context, print);
 registerOrganisationCommands(program, context, print);
 registerCrewCommands(program, context, print);
+registerMissionCommands(program, context, print);
 
 try {
   if (process.argv.length === 2) program.help();

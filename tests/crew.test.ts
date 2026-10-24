@@ -13,6 +13,7 @@ import { seedPassword, tenantIds } from '../src/db/fixtures.js';
 import { login } from '../src/domain/auth.js';
 import { useTestDatabase } from './database.js';
 import { createCliRunner } from './cli-runner.js';
+import { createApiClient } from './api-client.js';
 
 const { runtime, runtimeUrl } = useTestDatabase();
 const ids = {
@@ -25,37 +26,17 @@ const ids = {
 };
 const window = { start: '2030-03-01T09:00:00Z', end: '2030-03-01T10:00:00Z' };
 let app: ReturnType<typeof createApp>;
-let tokens: Map<string, string>;
 let logs: unknown[];
-beforeEach(() => { tokens = new Map(); logs = []; app = createApp(runtime.db, { log: (entry) => logs.push(entry) }); });
-async function token(actor: string) {
-  if (!tokens.has(actor)) {
-    const [organisation, username] = actor.split('/');
-    const session = await login(runtime.db, { organisation: organisation!, username: username!, password: seedPassword });
-    tokens.set(actor, session.token);
-  }
-  return tokens.get(actor)!;
-}
-async function request(actor: string, path: string, method = 'GET', body?: unknown) {
-  return app.request(`/v1${path}`, { method,
-    headers: { authorization: `Bearer ${await token(actor)}`, 'content-type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-}
-async function ok(actor: string, path: string, method = 'GET', body?: unknown) {
-  const response = await request(actor, path, method, body);
-  const data = JSON.parse(await response.text());
-  expect(response.status, JSON.stringify(data)).toBeLessThan(300);
-  return data;
-}
-async function error(actor: string, path: string, method = 'GET', body?: unknown, status = 404) {
-  const response = await request(actor, path, method, body);
-  const data = JSON.parse(await response.text());
-  expect(response.status, JSON.stringify(data)).toBe(status);
-  const { requestId, ...safe } = data.error;
-  expect(requestId).toBeTruthy();
-  return safe;
-}
+let request: ReturnType<typeof createApiClient>['request'];
+let ok: ReturnType<typeof createApiClient>['ok'];
+let error: ReturnType<typeof createApiClient>['error'];
+let token: ReturnType<typeof createApiClient>['token'];
+let useToken: ReturnType<typeof createApiClient>['useToken'];
+beforeEach(() => {
+  logs = [];
+  app = createApp(runtime.db, { log: (entry) => logs.push(entry) });
+  ({ request, ok, error, token, useToken } = createApiClient(app, runtime.db));
+});
 
 describe('organisation, members and crew permissions', () => {
   it('requires authentication for every registered protected route and HTTP method', async () => {
@@ -75,7 +56,7 @@ describe('organisation, members and crew permissions', () => {
     expect(Object.keys(member).sort()).toEqual(['displayName', 'id', 'role', 'username']);
     expect((await request('atlas/director', '/crew', 'POST', { userId: member.id })).status).toBe(201);
     const session = await login(runtime.db, { organisation: 'atlas', username: 'new.crew', password: 'created-password-123' });
-    tokens.set('atlas/new.crew', session.token);
+    useToken('atlas/new.crew', session.token);
     const own = await ok('atlas/new.crew', '/crew/me');
     await ok('atlas/new.crew', '/crew/me', 'PATCH', { displayName: 'New Pilot', biography: 'Crew biography' });
     expect((await ok('atlas/new.crew', '/me')).user.displayName).toBe('New Pilot');

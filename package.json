@@ -1,20 +1,40 @@
 {
-  "name": "test-playground",
+  "name": "mission-control",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multi-tenant mission planning API and CLI",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "test": "vitest"
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "mc": "node --import tsx src/cli/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx src/db/migrate.ts",
+    "db:seed": "node --env-file-if-exists=.env --import tsx src/db/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run",
+    "test:unit": "npm test -- tests/unit.test.ts tests/cli.test.ts"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/node": "^26.6.3",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@inquirer/password": "5.2.4",
+    "commander": "15.0.0",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.13",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import type { CommandContext, Print } from './context.js';
 import { CliError } from './errors.js';
-import { confirmRemoval, parseVersion } from './input.js';
+import { confirmAction, parseVersion } from './input.js';
 import { assignmentDetails, assignmentRow, missionDetails } from './mission-output.js';
 import type { Assignment, AssignmentPage, AssignmentResponse, Mission } from './mission-output.js';
 import { listing, listOptions, query } from './pagination.js';
@@ -28,7 +28,7 @@ export function registerAssignmentCommands(program: Command, context: CommandCon
         if (!process.stdin.isTTY) throw new CliError('A reviewed version is required.', 'VERSION_REQUIRED', 'Run assignments show, review the plan and pass --version.');
         const assignment = await request<Assignment>(path(opts.assignment));
         console.error(assignmentDetails(assignment));
-        await confirmRemoval('Accept this exact plan? Consent does not reserve time.', false);
+        await confirmAction('Accept this exact plan? Consent does not reserve time.', false);
         version = assignment.version;
       }
       const result = await request<AssignmentResponse>(`${path(opts.assignment)}/accept`, 'POST', { version });
@@ -47,7 +47,7 @@ export function registerAssignmentCommands(program: Command, context: CommandCon
     .option('--yes', 'confirm without prompting').action(async (opts) => {
       const { request } = await context();
       const assignment = await request<Assignment>(path(opts.assignment));
-      await confirmRemoval(`Withdraw assignment ${assignment.id} from ${assignment.mission.title}?`, Boolean(opts.yes));
+      await confirmAction(`Withdraw assignment ${assignment.id} from ${assignment.mission.title}?`, Boolean(opts.yes));
       const result = await request<Mission>(`/missions/${encodeURIComponent(assignment.missionId)}/proposals/${encodeURIComponent(assignment.id)}`, 'DELETE', { version: opts.version });
       print(result, missionDetails(result));
     });

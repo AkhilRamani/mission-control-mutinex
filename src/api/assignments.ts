@@ -3,10 +3,8 @@ import { z } from 'zod';
 import type { Database } from '../db/client.js';
 import { getAssignment, listAssignments, respondToAssignment } from '../domain/missions/assignments.js';
 import type { Env } from './context.js';
-import { pageInput, parseInput, readJson } from './validation.js';
+import { pageInput, parseInput, readJson, uuid as id, versionInput } from './validation.js';
 
-const id = z.uuid().toLowerCase();
-const responseInput = z.strictObject({ version: z.number().int().min(1).max(2147483647) });
 const listInput = pageInput.extend({ mine: z.enum(['true', 'false']).transform((v) => v === 'true').optional() });
 
 export function assignmentRoutes(db: Database) {
@@ -15,7 +13,7 @@ export function assignmentRoutes(db: Database) {
   app.get('/assignments/:id', async (c) => c.json(await getAssignment(db, c.get('user'), parseInput(id, c.req.param('id')))));
   for (const action of ['accept', 'decline', 'retract'] as const) {
     app.post(`/assignments/:id/${action}`, async (c) => {
-      const input = await readJson(c, responseInput);
+      const input = await readJson(c, versionInput);
       return c.json(await respondToAssignment(db, c.get('user'), parseInput(id, c.req.param('id')), input.version, action));
     });
   }

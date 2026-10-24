@@ -4,9 +4,8 @@ import type { Database } from '../db/client.js';
 import type { Env } from './context.js';
 import * as crew from '../domain/crew.js';
 import { crewHistory } from '../domain/missions/assignments.js';
-import { displayName, instant, pageInput, searchInput, parseInput, readJson } from './validation.js';
+import { displayName, instant, pageInput, searchInput, parseInput, readJson, uuid, proficiency } from './validation.js';
 
-const uuid = z.uuid();
 const crewId = z.union([z.literal('me'), uuid]);
 const profileInput = z.strictObject({ displayName: displayName.optional(), biography: z.string().trim().max(2000).optional(),
   active: z.boolean().optional() }).refine((input) => Object.keys(input).length > 0);
@@ -24,7 +23,7 @@ export function crewRoutes(db: Database) {
   app.patch('/crew/:id', async (c) => c.json(await crew.updateCrew(db, c.get('user'), parseInput(crewId, c.req.param('id')),
     await readJson(c, profileInput))));
   app.put('/crew/:id/skills/:skillId', async (c) => {
-    const input = await readJson(c, z.strictObject({ proficiency: z.number().int().min(1).max(5) }));
+    const input = await readJson(c, z.strictObject({ proficiency }));
     return c.json(await crew.setCrewSkill(db, c.get('user'), parseInput(crewId, c.req.param('id')),
       parseInput(uuid, c.req.param('skillId')), input.proficiency));
   });
@@ -40,6 +39,6 @@ export function crewRoutes(db: Database) {
     await crew.removeAvailability(db, c.get('user'), parseInput(crewId, c.req.param('id')), parseInput(uuid, c.req.param('availabilityId')));
     return c.json({ message: 'Availability removed.' });
   });
-  
+
   return app;
 }

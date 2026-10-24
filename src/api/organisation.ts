@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Database } from '../db/client.js';
 import type { Env } from './context.js';
 import * as organisation from '../domain/organisation.js';
-import { displayName, searchInput, username, newPassword, parseInput, readJson } from './validation.js';
+import { displayName, searchInput, username, newPassword, parseInput, readJson, uuid } from './validation.js';
 
 const skillInput = z.strictObject({ name: z.string().trim().toLowerCase().min(1).max(80) });
 const memberInput = z.strictObject({ username, displayName, role: z.enum(['director', 'lead', 'crew']), password: newPassword });
@@ -24,10 +24,10 @@ export function organisationRoutes(db: Database) {
   });
   app.patch('/skills/:id', async (c) => {
     const input = await readJson(c, skillInput);
-    return c.json(await organisation.renameSkill(db, c.get('user'), parseInput(z.uuid(), c.req.param('id')), input.name));
+    return c.json(await organisation.renameSkill(db, c.get('user'), parseInput(uuid, c.req.param('id')), input.name));
   });
   app.delete('/skills/:id', async (c) => {
-    await organisation.deleteSkill(db, c.get('user'), parseInput(z.uuid(), c.req.param('id')));
+    await organisation.deleteSkill(db, c.get('user'), parseInput(uuid, c.req.param('id')));
     return c.json({ message: 'Skill removed.' });
   });
   return app;

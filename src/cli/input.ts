@@ -8,7 +8,7 @@ export function parseVersion(value: string) {
   return Number(value);
 }
 
-export async function confirmRemoval(message: string, yes: boolean): Promise<void> {
+export async function confirmAction(message: string, yes: boolean): Promise<void> {
   if (yes) return;
   if (!process.stdin.isTTY) throw new CliError('Confirmation required.', 'CONFIRMATION_REQUIRED', 'Review the target and repeat with --yes.');
   const prompt = createInterface({ input: process.stdin, output: process.stderr });

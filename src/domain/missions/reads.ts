@@ -6,7 +6,8 @@ import { findCrew } from '../crew.js';
 import { page, searchPattern } from '../pagination.js';
 import type { PageInput } from '../pagination.js';
 import { findMission, missionFields, missionSummary, visibleMission, readMissionView } from './shared.js';
-import type { AssignmentChange, AssignmentSnapshot, Mission } from './shared.js';
+import type { Mission } from './shared.js';
+import type { AssignmentChange, AssignmentSnapshot } from './changes.js';
 
 export async function getMission(db: Database, user: Identity, id: string) {
   return db.transaction(async (tx) => readMissionView(tx, user, await findMission(tx, user, id)),

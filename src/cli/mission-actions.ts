@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import type { CommandContext, Print } from './context.js';
 import { CliError } from './errors.js';
-import { confirmRemoval, parseVersion } from './input.js';
+import { confirmAction, parseVersion } from './input.js';
 import { missionDetails } from './mission-output.js';
 import type { Mission } from './mission-output.js';
 
@@ -24,7 +24,7 @@ export function registerMissionActions(missions: Command, context: CommandContex
           'Run missions show, review the full plan and roster, then pass --version.');
         const mission = await request<Mission>(path);
         console.error(missionDetails(mission));
-        await confirmRemoval('Approve this exact plan and reserve its crew?', false);
+        await confirmAction('Approve this exact plan and reserve its crew?', false);
         version = mission.version;
       }
       const result = await request<Mission>(`${path}/approve`, 'POST', { version });
@@ -37,7 +37,7 @@ export function registerMissionActions(missions: Command, context: CommandContex
       .requiredOption('--reason <text>', 'reason recorded in planner-visible history')
       .option('--yes', 'confirm without prompting').action(async (opts) => {
         const { request } = await context();
-        await confirmRemoval(`${action === 'reject' ? 'Reject' : 'Withdraw'} mission ${opts.mission} and reset all consent?`, Boolean(opts.yes));
+        await confirmAction(`${action === 'reject' ? 'Reject' : 'Withdraw'} mission ${opts.mission} and reset all consent?`, Boolean(opts.yes));
         const result = await request<Mission>(`/missions/${encodeURIComponent(opts.mission)}/${action}`, 'POST', { version: opts.version, reason: opts.reason });
         print(result, missionDetails(result));
       });
@@ -51,7 +51,7 @@ export function registerMissionActions(missions: Command, context: CommandContex
       .requiredOption('--version <number>', 'mission version you reviewed', parseVersion)
       .option('--yes', 'confirm without prompting').action(async (opts) => {
         const { request } = await context();
-        await confirmRemoval(`${action === 'cancel' ? 'Cancel' : 'Complete'} mission ${opts.mission}? This is final.`, Boolean(opts.yes));
+        await confirmAction(`${action === 'cancel' ? 'Cancel' : 'Complete'} mission ${opts.mission}? This is final.`, Boolean(opts.yes));
         const result = await request<Mission>(`/missions/${encodeURIComponent(opts.mission)}/${action}`, 'POST', {
           version: opts.version, ...(action === 'cancel' ? { reason: opts.reason } : {}),
         });

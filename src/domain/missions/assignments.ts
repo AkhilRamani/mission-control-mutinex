@@ -9,10 +9,10 @@ import type { PageInput } from '../pagination.js';
 import { missionPhase } from '../time.js';
 import { checkEligibility, loadCandidates, lockCrew } from './matching.js';
 import {
-  assignmentFields, assignmentSnapshot, currentStates, whereAssignment,
-  checkDraft, checkEdit, checkTimeline, checkVersion, requirePlanner,
-  findMission, readAssignments, readPositions, readMissionView, finishChange, recordChange,
+  assignmentFields, currentStates, whereAssignment, checkDraft, checkEdit, checkTimeline, checkVersion,
+  requirePlanner, findMission, readAssignments, readPositions, readMissionView,
 } from './shared.js';
+import { assignmentSnapshot, finishChange, recordChange } from './changes.js';
 import type { Assignment } from './shared.js';
 
 export type Proposal = { positionId: string; crewId: string };

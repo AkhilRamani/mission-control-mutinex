@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { confirmRemoval, readPasswords } from './input.js';
+import { confirmAction, readPasswords } from './input.js';
 import type { CommandContext, Print } from './context.js';
 import { listOptions, query, listing } from './pagination.js';
 import type { Page } from '../domain/pagination.js';
@@ -62,7 +62,7 @@ export function registerOrganisationCommands(program: Command, context: CommandC
   skills.command('remove').requiredOption('--skill <id>', 'unreferenced skill ID').option('--yes', 'confirm without prompting')
     .action(async (opts) => {
       const { request } = await context();
-      await confirmRemoval(`Remove skill ${opts.skill}?`, Boolean(opts.yes));
+      await confirmAction(`Remove skill ${opts.skill}?`, Boolean(opts.yes));
       const result = await request<{ message: string }>(`/skills/${segment(opts.skill)}`, 'DELETE');
       print(result, result.message);
     });

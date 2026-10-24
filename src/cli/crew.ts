@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { confirmRemoval } from './input.js';
+import { confirmAction } from './input.js';
 import type { getCrew, listCrew } from '../domain/crew.js';
 import type { Page } from '../domain/pagination.js';
 import type { CommandContext, Print } from './context.js';
@@ -46,7 +46,7 @@ export function registerCrewCommands(program: Command, context: CommandContext, 
     .addOption(new Option('--active <boolean>', 'Director-only eligibility flag').choices(['true', 'false']))
     .option('--yes', 'confirm deactivation without prompting').action(async (opts) => {
       const { request } = await context();
-      if (opts.active === 'false') await confirmRemoval(`Deactivate crew ${opts.crew}?`, Boolean(opts.yes));
+      if (opts.active === 'false') await confirmAction(`Deactivate crew ${opts.crew}?`, Boolean(opts.yes));
       const result = await request<Profile>(profilePath(opts.crew), 'PATCH', {
         ...(opts.name !== undefined ? { displayName: opts.name } : {}), ...(opts.bio !== undefined ? { biography: opts.bio } : {}),
         ...(opts.active !== undefined ? { active: opts.active === 'true' } : {}),
@@ -65,7 +65,7 @@ export function registerCrewCommands(program: Command, context: CommandContext, 
   levels.command('remove').option('--crew <id|me>', 'your crew profile', 'me').requiredOption('--skill <id>', 'skill ID from crew show')
     .option('--yes', 'confirm without prompting').action(async (opts) => {
       const { request } = await context();
-      await confirmRemoval(`Remove skill ${opts.skill} from crew ${opts.crew}?`, Boolean(opts.yes));
+      await confirmAction(`Remove skill ${opts.skill} from crew ${opts.crew}?`, Boolean(opts.yes));
       const result = await request<{ message: string }>(`${profilePath(opts.crew)}/skills/${segment(opts.skill)}`, 'DELETE');
       print(result, result.message);
     });
@@ -86,7 +86,7 @@ export function registerCrewCommands(program: Command, context: CommandContext, 
   availability.command('remove').option('--crew <id|me>', 'your crew profile', 'me').requiredOption('--window <id>', 'window ID from availability list')
     .option('--yes', 'confirm without prompting').action(async (opts) => {
       const { request } = await context();
-      await confirmRemoval(`Remove availability ${opts.window} from crew ${opts.crew}?`, Boolean(opts.yes));
+      await confirmAction(`Remove availability ${opts.window} from crew ${opts.crew}?`, Boolean(opts.yes));
       const result = await request<{ message: string }>(`${profilePath(opts.crew)}/availability/${segment(opts.window)}`, 'DELETE');
       print(result, result.message);
     });

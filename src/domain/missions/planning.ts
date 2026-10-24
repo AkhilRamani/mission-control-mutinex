@@ -4,9 +4,10 @@ import { missions, positions, positionSkills, skills } from '../../db/schema.js'
 import type { Identity } from '../auth.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import {
-  checkEdit, checkTimeline, findMission, finishChange, planSnapshot, positionSnapshot,
-  readPositions, recordEvent, wherePosition, readMissionView, resetConsent, missionFields, missionSummary, positionFields,
+  checkEdit, checkTimeline, findMission, readPositions, wherePosition, readMissionView, missionFields,
+  missionSummary, positionFields,
 } from './shared.js';
+import { finishChange, planSnapshot, positionSnapshot, recordEvent, resetConsent } from './changes.js';
 
 export type RequirementInput = { skillId: string; minProficiency: number };
 export type PlanInput = { title: string; brief: string; start: Date; end: Date };

@@ -5,9 +5,9 @@ import type { Identity } from '../auth.js';
 import { AppError } from '../errors.js';
 import { lockCrew } from './matching.js';
 import {
-  assignmentFields, assignmentSnapshot, checkVersion, currentStates, findMission, finishChange,
-  readAssignments, readPositions, requirePlanner,
+  assignmentFields, checkVersion, currentStates, findMission, readAssignments, readPositions, requirePlanner,
 } from './shared.js';
+import { assignmentSnapshot, finishChange } from './changes.js';
 
 export async function cancelMission(db: Database, user: Identity, id: string, version: number, reason: string) {
   return db.transaction(async (tx) => {

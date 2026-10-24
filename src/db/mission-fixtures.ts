@@ -2,8 +2,9 @@ import { eq } from 'drizzle-orm';
 import type { Transaction } from './client.js';
 import { assignments, availability, crew, crewSkills, missionEvents, missions, positions, positionSkills, users } from './schema.js';
 import { hashPassword } from '../domain/password.js';
-import { assignmentSnapshot, planSnapshot, positionSnapshot } from '../domain/missions/shared.js';
-import type { Assignment, AssignmentSnapshot, Position } from '../domain/missions/shared.js';
+import { assignmentSnapshot, planSnapshot, positionSnapshot } from '../domain/missions/changes.js';
+import type { Assignment, Position } from '../domain/missions/shared.js';
+import type { AssignmentSnapshot, MissionEvent } from '../domain/missions/changes.js';
 
 const day = 86_400_000;
 // Stable resource IDs; times are relative to the UTC date supplied to seedDatabase.
@@ -61,7 +62,7 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
   let version = 0;
   const slots: Position[] = [];
   let roster: Assignment[] = [];
-  async function event(kind: string, payload: Record<string, unknown>, actorId = ownerId) {
+  async function event(kind: MissionEvent['kind'], payload: Record<string, unknown>, actorId = ownerId) {
     await tx.insert(missionEvents).values({ id: id(spec.org, 8, spec.number * 100 + ++version),
       tenantId, missionId: mission.id, missionVersion: version, actorId, kind, payload, occurredAt: new Date(eventTime++) });
   }

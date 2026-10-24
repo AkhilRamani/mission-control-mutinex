@@ -6,6 +6,10 @@ export const instant = z.iso.datetime({ offset: true }).transform((value) => new
 export const username = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 export const newPassword = z.string().min(12).max(128);
 export const displayName = z.string().trim().min(1).max(120);
+export const uuid = z.uuid().toLowerCase();
+export const proficiency = z.number().int().min(1).max(5);
+export const version = z.number().int().min(1).max(2147483647);
+export const versionInput = z.strictObject({ version });
 const pagination = {
   limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(100)).default(25),
   offset: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(0).max(2147483647)).default(0),

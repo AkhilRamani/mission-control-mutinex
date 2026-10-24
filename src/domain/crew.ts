@@ -26,7 +26,7 @@ export async function findCrew(db: Database | Transaction, user: Identity, id: s
   if (!profile) throw notFound();
   return profile;
 }
-function owner(user: Identity, profile: { userId: string }) {
+function requireOwner(user: Identity, profile: { userId: string }) {
   if (profile.userId !== user.id) throw forbidden();
 }
 
@@ -61,7 +61,7 @@ export async function updateCrew(db: Database, user: Identity, id: string,
   return db.transaction(async (tx) => {
     const profile = await findCrew(tx, user, id, true);
     if (user.role !== 'director') {
-      owner(user, profile);
+      requireOwner(user, profile);
       if (input.active !== undefined) throw forbidden();
     }
     if (input.biography !== undefined || input.active !== undefined) {
@@ -83,7 +83,7 @@ export async function setCrewSkill(db: Database, user: Identity, id: string, ski
   return db.transaction(async (tx) => {
     const profile = await findCrew(tx, user, id, true);
     await findSkill(tx, user, skillId);
-    owner(user, profile);
+    requireOwner(user, profile);
     await tx.insert(crewSkills).values({ tenantId: user.tenantId, crewId: profile.id, skillId, proficiency })
       .onConflictDoUpdate({ target: [crewSkills.tenantId, crewSkills.crewId, crewSkills.skillId], set: { proficiency } });
     await checkConfirmedWork(tx, user, profile.id);
@@ -97,7 +97,7 @@ export async function removeCrewSkill(db: Database, user: Identity, id: string, 
     const where = and(eq(crewSkills.tenantId, user.tenantId), eq(crewSkills.crewId, profile.id), eq(crewSkills.skillId, skillId));
     const [level] = await tx.select({ skillId: crewSkills.skillId }).from(crewSkills).where(where);
     if (!level) throw notFound();
-    owner(user, profile);
+    requireOwner(user, profile);
     await tx.delete(crewSkills).where(where);
     await checkConfirmedWork(tx, user, profile.id);
   });
@@ -114,7 +114,7 @@ export async function listAvailability(db: Database, user: Identity, id: string,
 export async function addAvailability(db: Database, user: Identity, id: string, input: { start: Date; end: Date }) {
   return db.transaction(async (tx) => {
     const profile = await findCrew(tx, user, id, true);
-    owner(user, profile);
+    requireOwner(user, profile);
     const [window] = await tx.insert(availability).values({ ...input, tenantId: user.tenantId, crewId: profile.id })
       .returning(availabilityFields);
     return window!;
@@ -127,7 +127,7 @@ export async function removeAvailability(db: Database, user: Identity, id: strin
     const where = and(eq(availability.tenantId, user.tenantId), eq(availability.crewId, profile.id), eq(availability.id, availabilityId));
     const [window] = await tx.select({ id: availability.id }).from(availability).where(where);
     if (!window) throw notFound();
-    owner(user, profile);
+    requireOwner(user, profile);
     await tx.delete(availability).where(where);
     await checkConfirmedWork(tx, user, profile.id);
   });

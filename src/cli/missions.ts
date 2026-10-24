@@ -6,7 +6,7 @@ import type { CommandContext, Print } from './context.js';
 import { matchDetails, missionDetails, missionRow } from './mission-output.js';
 import type { Mission, MissionSummary, History, Match } from './mission-output.js';
 import { CliError } from './errors.js';
-import { confirmRemoval, parseVersion } from './input.js';
+import { confirmAction, parseVersion } from './input.js';
 import { listOptions, listing, query } from './pagination.js';
 import { registerMissionActions } from './mission-actions.js';
 
@@ -131,7 +131,7 @@ export function registerMissionCommands(program: Command, context: CommandContex
   reviewedVersion(positions.command('remove').requiredOption('--mission <id>', 'mission ID').requiredOption('--position <id>', 'position ID from missions show')
     .option('--yes', 'confirm without prompting')).action(async (opts) => {
     const { request } = await context();
-    await confirmRemoval(`Remove position ${opts.position} from mission ${opts.mission}?`, Boolean(opts.yes));
+    await confirmAction(`Remove position ${opts.position} from mission ${opts.mission}?`, Boolean(opts.yes));
     const result = await request<Mission>(`${path(opts.mission)}/positions/${encodeURIComponent(opts.position)}`, 'DELETE', { version: opts.version });
     print(result, missionDetails(result));
   });

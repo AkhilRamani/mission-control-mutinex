@@ -6,9 +6,10 @@ import type { Identity } from '../auth.js';
 import { AppError, forbidden } from '../errors.js';
 import { checkEligibility, loadCandidates, lockCrew } from './matching.js';
 import {
-  assignmentFields, assignmentSnapshot, checkEdit, checkTimeline, checkVersion, currentStates,
-  findMission, finishChange, readAssignments, readPositions, requirePlanner, resetConsent,
+  assignmentFields, checkEdit, checkTimeline, checkVersion, currentStates, findMission, readAssignments,
+  readPositions, requirePlanner,
 } from './shared.js';
+import { assignmentSnapshot, finishChange, resetConsent } from './changes.js';
 import type { Mission } from './shared.js';
 
 export async function submitMission(db: Database, user: Identity, id: string, version: number) {

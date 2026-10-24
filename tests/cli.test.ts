@@ -50,7 +50,7 @@ describe('interactive approval', () => {
     const request = vi.fn().mockResolvedValueOnce(mission).mockRejectedValueOnce(new CliError('Changed', 'STALE_VERSION'));
     const tty = vi.spyOn(process, 'stdin', 'get').mockReturnValue({ isTTY: true } as typeof process.stdin);
     const display = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const confirm = vi.spyOn(input, 'confirmRemoval').mockResolvedValue();
+    const confirm = vi.spyOn(input, 'confirmAction').mockResolvedValue();
     const print = vi.fn();
     try {
       const program = new Command();

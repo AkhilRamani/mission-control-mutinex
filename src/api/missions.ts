@@ -9,17 +9,17 @@ import { proposeCrew, removeProposal } from '../domain/missions/assignments.js';
 import { approveMission, returnToDraft, submitMission } from '../domain/missions/approval.js';
 import { cancelMission, completeMission } from '../domain/missions/lifecycle.js';
 import type { Env } from './context.js';
-import { displayName, instant, pageInput, searchInput, parseInput, readJson } from './validation.js';
+import {
+  displayName, instant, pageInput, searchInput, parseInput, readJson, uuid as id, proficiency, version,
+  versionInput,
+} from './validation.js';
 
-const id = z.uuid().toLowerCase();
-const version = z.number().int().min(1).max(2147483647);
-const versionInput = z.strictObject({ version });
 const reasonInput = z.strictObject({ version, reason: z.string().trim().min(1).max(2000) });
 const plan = { title: displayName, brief: z.string().trim().max(4000), start: instant, end: instant };
 const createInput = z.strictObject({ ...plan, brief: plan.brief.default('') });
 const patchInput = z.strictObject({ version, ...z.object(plan).partial().shape })
   .refine((value) => Object.keys(value).length > 1);
-const requirements = z.array(z.strictObject({ skillId: id, minProficiency: z.number().int().min(1).max(5) }))
+const requirements = z.array(z.strictObject({ skillId: id, minProficiency: proficiency }))
   .refine((values) => new Set(values.map((v) => v.skillId)).size === values.length);
 const positionInput = z.strictObject({ version, label: displayName, requirements: requirements.default([]) });
 const positionPatch = z.strictObject({ version, label: displayName.optional(), requirements: requirements.optional() })

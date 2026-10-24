@@ -11,3 +11,11 @@ export class AppError extends Error {
 export function unauthenticated(): AppError {
   return new AppError(401, 'UNAUTHENTICATED', 'Authentication required.', 'Run mc login.');
 }
+
+export function notFound(): AppError {
+  return new AppError(404, 'NOT_FOUND', 'Resource not found.', 'List visible resources and check the IDs.');
+}
+
+export function forbidden(): AppError {
+  return new AppError(403, 'FORBIDDEN', 'This action is not permitted.', 'Use an account with permission for this action.');
+}

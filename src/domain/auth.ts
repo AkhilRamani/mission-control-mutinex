@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { organisations, sessions, users } from '../db/schema.js';
-import { AppError, unauthenticated } from './errors.js';
+import { AppError, forbidden, unauthenticated } from './errors.js';
 import { dummyHash, hashPassword, verifyPassword } from './password.js';
 
 const identityFields = {
@@ -67,4 +67,8 @@ export async function changePassword(db: Database, user: Identity, token: string
       .where(and(eq(users.tenantId, user.tenantId), eq(users.id, user.id)));
     await tx.delete(sessions).where(and(eq(sessions.tenantId, user.tenantId), eq(sessions.userId, user.id)));
   });
+}
+
+export function requireDirector(user: Identity): void {
+  if (user.role !== 'director') throw forbidden();
 }

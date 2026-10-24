@@ -11,3 +11,4 @@ export function connectDatabase(url: string) {
   return { db: drizzle(pool), pool };
 }
 export type Database = ReturnType<typeof connectDatabase>['db'];
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];

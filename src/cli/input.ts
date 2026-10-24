@@ -1,5 +1,15 @@
 import password from '@inquirer/password';
+import { createInterface } from 'node:readline/promises';
 import { CliError } from './errors.js';
+
+export async function confirmRemoval(message: string, yes: boolean): Promise<void> {
+  if (yes) return;
+  if (!process.stdin.isTTY) throw new CliError('Confirmation required.', 'CONFIRMATION_REQUIRED', 'Review the target and repeat with --yes.');
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    if ((await prompt.question(`${message} [y/N] `)).trim().toLowerCase() !== 'y') throw new CliError('Cancelled.', 'CANCELLED');
+  } finally { prompt.close(); }
+}
 
 export async function readPasswords(labels: string[], fromStdin: boolean): Promise<string[]> {
   if (!fromStdin) {

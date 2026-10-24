@@ -1,6 +1,6 @@
 # Mission Control
 
-TypeScript API and CLI for tenant-isolated mission planning. **Implemented: step 1, authentication and local setup.** Crew and mission workflows follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint.
+TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–2, authentication and organisation/crew management.** Mission workflows follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint. [SCHEMA.md](SCHEMA.md) documents the full database target and marks implemented versus planned tables.
 
 ## Run locally
 
@@ -18,6 +18,8 @@ npm run dev
 The API listens at `http://127.0.0.1:3000`; PostgreSQL at `127.0.0.1:55432`. Set `PORT` in `.env` if needed. Data survives restarts in the Compose volume. Seeding is atomic and refuses a nonempty database. Repeated migration runs are safe. Use `docker compose stop` to stop PostgreSQL without deleting data.
 
 Compose creates separate database-owner migration roles and unprivileged runtime roles for development and tests. The API refuses superuser/role-administration credentials. For an existing local PostgreSQL 17 instance, run `docker/init.sql` once with `psql` as its administrator, then adjust the ports in `.env`. That script provisions dedicated databases/roles and is not repeatable; it does not drop existing objects. No extension is needed yet.
+
+**Upgrading from step 1:** run `npm run db:migrate` and restart the API. Existing accounts/data remain intact; the migration does not insert fixtures. Use the CLI below to add profiles/skills. `db:seed` still requires an empty database and never resets existing data.
 
 ## Try the CLI
 
@@ -47,6 +49,46 @@ The session is stored outside the repository at `~/.config/mission-control/sessi
 
 For scripts, `login --password-stdin` reads one line from a secure pipe; `password change --password-stdin` reads current and new passwords on two lines. Never put secrets in command arguments or shell history. `--json` writes results to stdout and errors to stderr; failures exit nonzero. For clean JSON through npm, use `npm run --silent mc -- --json whoami`. Writes are never automatically retried.
 
+## Configure crew through the CLI
+
+Commands print discoverable IDs. Replace `<member-id>`, `<skill-id>` and `<crew-id>` below with the IDs shown by create/list commands. Start logged out:
+
+```sh
+npm run mc -- login --org atlas --username director
+npm run mc -- org show
+npm run mc -- org update --name 'Atlas Operations'
+npm run mc -- members create --username jamie --name Jamie --role crew
+# Enter an initial password privately, then share it with the person outside this app.
+npm run mc -- members list --search jamie
+npm run mc -- crew create --member <member-id>
+npm run mc -- skills list
+# Only if piloting is absent (an upgraded step 1 database):
+npm run mc -- skills add --name piloting
+npm run mc -- logout
+
+npm run mc -- login --org atlas --username jamie
+npm run mc -- crew update --crew me --bio 'Available for flight missions'
+npm run mc -- crew skills set --crew me --skill <skill-id> --level 3
+npm run mc -- availability add --crew me --start 2030-01-10T09:00:00Z --end 2030-01-10T17:00:00Z
+npm run mc -- crew show --crew me
+npm run mc -- availability list --crew me
+npm run mc -- logout
+
+npm run mc -- login --org atlas --username lead
+npm run mc -- crew list --search jamie
+npm run mc -- crew show --crew <crew-id>
+npm run mc -- availability list --crew <crew-id>
+npm run mc -- logout
+```
+
+Directors manage accounts, catalogue names and crew name/biography/active status. Any role can have a crew profile. All roles can edit their own name/biography, but **only the owner can declare skills and availability**. Leads can read all tenant crew; Crew Members can list/show only themselves. Member lists are Director-only; the skill catalogue is visible to all tenant members. Deactivating a crew profile affects staffing eligibility, not login access.
+
+Other commands: `skills rename/remove --skill <id>`, `crew skills remove --skill <id>`, `availability remove --window <id>`, `crew update --active false`. Run each with `--help` for required options. Destructive commands prompt; scripts must explicitly supply `--yes`. Skill renames must preserve meaning; referenced skills cannot be deleted. Proficiency levels are 1 beginner, 2 basic, 3 independent, 4 advanced, 5 expert.
+
+Lists accept `--limit` (25 by default, maximum 100), `--offset`, and `--search` on members/crew/skills. Human output supplies the next offset; JSON is `{items, nextOffset}`. Search is a literal, case-insensitive substring. Availability requires offset-bearing ISO timestamps and positive `[start,end)` intervals; responses use UTC. Overlapping/adjacent windows jointly provide coverage. Removing a window removes only that record.
+
+Fresh seeds include Atlas/Boreal profiles for Leads and Crew, different skill catalogues, Alex with both skills, Sam with piloting only, and underqualified Leads without availability. Crew availability uses the fixed UTC interval **2030-01-01 through 2030-02-01 (exclusive)**. These are local examples, not qualifications verified by Directors.
+
 ## API
 
 JSON under `/v1`; authenticated requests use `Authorization: Bearer <token>`. Only the login response returns a raw token. All responses disable caching.
@@ -58,10 +100,21 @@ JSON under `/v1`; authenticated requests use `Authorization: Bearer <token>`. On
 | `GET /v1/me` | `{user}` from the session, including organisation and fixed role |
 | `POST /v1/auth/logout` | `{}` → deletes current session |
 | `PUT /v1/me/password` | `{oldPassword, newPassword}` → changes password, revokes all own sessions |
+| `GET/PATCH /v1/organisation` | Organisation fields; PATCH `{name}` (Director) |
+| `GET/POST /v1/members` | Paginated accounts; POST `{username, displayName, role, password}` (Director) |
+| `GET/POST /v1/crew` | Paginated visible profiles; POST `{userId}` (Director) |
+| `GET/PATCH /v1/crew/:id` | Profile with skills; PATCH `{displayName?, biography?, active?}` (at least one) |
+| `GET/POST /v1/skills` | Paginated catalogue; POST `{name}` (Director) |
+| `PATCH/DELETE /v1/skills/:id` | Rename with `{name}` / remove unreferenced skill (Director) |
+| `PUT/DELETE /v1/crew/:id/skills/:skillId` | Set `{proficiency}` / remove own skill |
+| `GET/POST /v1/crew/:id/availability` | Paginated windows; POST `{start, end}` for own profile |
+| `DELETE /v1/crew/:id/availability/:availabilityId` | Remove own window, with parent/child validation |
+
+Crew `:id` accepts a UUID or `me`. List query fields are `limit`, `offset`, and `q` (members/crew/skills only). Creation returns 201. Single-resource responses are plain objects; deletes return `{message}`. Names/biographies are trimmed; skill names are lowercase. Display/organisation names are 1–120 characters, skill names 1–80, biographies at most 2000. Usernames are 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. Account roles and organisation slugs are immutable.
 
 Tenant/user identity comes only from the session. Login names are trimmed/lowercased; passwords are not. New passwords require 12–128 characters. Unknown fields are rejected. Error responses contain `{error: {code, message, recovery, requestId}}`; request IDs also appear in headers and structured logs. Logs contain route/status/timing/actor/tenant, never request bodies, passwords, tokens or SQL.
 
-Errors: 400 correct input; 401 check credentials/login again; 404 check path; 409 check state then retry; 429 wait; 500 use the request ID; 503 check database readiness. Login and password changes share one process-wide budget of 10 attempts per minute. This simple limit suits the loopback-only service; local users share the budget and restarting the process resets it. JSON bodies are limited to 16 KiB.
+Errors: 400 correct input; 401 check credentials/login again; 403 use an authorised account; 404 list visible resources and check IDs (missing/foreign/private records are indistinguishable); 409 inspect existing records/references before retrying; 429 wait; 500 use the request ID; 503 check database readiness. Login and password changes share one process-wide budget of 10 attempts per minute. This simple limit suits the loopback-only service; local users share the budget and restarting the process resets it. JSON bodies are limited to 16 KiB.
 
 Passwords use Node scrypt (`N=32768, r=8, p=3`, random 16-byte salt, 64-byte key, 64 MiB memory ceiling). Sessions use 32 random bytes, SHA-256 token hashes and 24-hour expiry. Login/password changes serialize on the user row; password changes recheck the session after acquiring the lock. Composite foreign keys prevent cross-tenant session references. The application scopes reads; there is no RLS.
 
@@ -76,7 +129,16 @@ npm run start
 
 Stop the development server before `start` on the same port. `build` emits Node ESM into `dist`. Tests migrate and reset **only** a loopback database named `mission_control_test`; both test URLs and distinct test runtime/migration roles are required. Test/seed URLs cannot contain query parameters or fragments, preventing connection-field overrides. Tests never fall back to the development database. The suite exercises real PostgreSQL constraints, deterministic lock races, safe failure responses, and real CLI subprocesses over HTTP. `npm run test:unit` needs no database.
 
-Code is organised as `api/` (HTTP/validation), `domain/` (direct Drizzle operations), `db/` (schema/migrations/fixtures), and `cli/` (HTTP client/commands). Change the schema, run `npm run db:generate`, inspect the generated SQL, then migrate. Do not edit applied migrations. Authentication middleware supplies the tenant context for subsequent steps; enforce role/ownership checks when their resource operations are added.
+Code follows the same three workflow groups in `api/`, `domain/` and `cli/`: `auth.ts`, `organisation.ts` (settings, accounts, skill catalogue), and `crew.ts` (profiles, personal skills, availability).
+
+- `api/app.ts` owns shared HTTP policy and route registration. Login/health are public; every other route group mounts after authentication. Routes validate input and call domain functions.
+- `domain/` owns permissions, tenant-scoped queries and transaction boundaries. Crew mutations stay together because they share crew-row locks. No repository or generic CRUD layer.
+- `cli/index.ts` registers commands and handles output/errors; feature files use one HTTP client and credential context. Type-only domain imports reuse response shapes without loading database code into the CLI.
+- `db/` keeps one schema, migrations and fixtures. Tests share guarded database setup and a real CLI subprocess runner; integration files run serially against the dedicated test database.
+
+Change the schema, run `npm run db:generate`, inspect the generated SQL, then migrate. Do not edit applied migrations. Composite FKs enforce tenant ownership of profiles, skills and windows; no cascading deletions.
+
+Step 2 limits: profile edits use last-write-wins; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`. Crew history arrives with assignments in step 4, and confirmed-booking edit guards in step 5.
 
 Current limits: local evaluation only, one saved CLI session, Unix credential permissions, process-local rate limits, no expired-session cleanup job, no public account provisioning or recovery. PostgreSQL uses a pinned major version; npm dependencies are pinned in `package.json` and `package-lock.json`. Drizzle Kit's development-only loader currently carries an esbuild development-server advisory; this project does not run its server or Studio. Runtime dependencies have no reported audit findings at implementation time. No deployment infrastructure or production identity integration is included.
 

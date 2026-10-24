@@ -2,15 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { sql } from 'drizzle-orm';
-import { z } from 'zod';
 import type { Database } from '../db/client.js';
-import { authenticate, changePassword, login, logout } from '../domain/auth.js';
-import type { Identity } from '../domain/auth.js';
-import { AppError, unauthenticated } from '../domain/errors.js';
-import { loginInput, passwordInput, readJson } from './validation.js';
+import { AppError } from '../domain/errors.js';
+import { loginHandler, requireAuthentication, authRoutes } from './auth.js';
+import { organisationRoutes } from './organisation.js';
+import type { Env } from './context.js';
 import { createAuthLimiter } from './rate-limit.js';
+import { crewRoutes } from './crew.js';
 
-type Env = { Variables: { requestId: string; user: Identity; token: string } };
 type Log = { requestId: string; method: string; route: string; status: number; durationMs: number; actorId?: string; tenantId?: string };
 
 export function createApp(db: Database, options: { log?: (entry: Log) => void; now?: () => number } = {}) {
@@ -41,6 +40,12 @@ export function createApp(db: Database, options: { log?: (entry: Log) => void; n
     // Drizzle wraps driver errors. Inspect codes only; never send/log SQL or driver text.
     const cause = error.cause ?? error;
     const code = typeof cause === 'object' && cause && 'code' in cause ? cause.code : undefined;
+    if (!safe && code === '23505') {
+      safe = new AppError(409, 'ALREADY_EXISTS', 'A record with this unique value already exists.', 'List existing records; use a different username/name or the existing crew profile.');
+    }
+    if (!safe && code === '23503') {
+      safe = new AppError(409, 'REFERENCE_CONFLICT', 'A related record prevents this change.', 'Refresh the records. Referenced skills cannot be deleted.');
+    }
     if (!safe && ['40P01', '55P03', '57014'].includes(String(code))) {
       safe = new AppError(409, 'RETRYABLE_CONFLICT', 'The operation could not obtain a database lock in time.', 'Check the current state, then retry.');
     }
@@ -63,31 +68,11 @@ export function createApp(db: Database, options: { log?: (entry: Log) => void; n
       return c.json({ status: 'unavailable', database: 'unavailable' }, 503);
     }
   });
-  app.post('/v1/auth/login', async (c) => {
-    limit();
-    const result = await login(db, await readJson(c, loginInput));
-    c.set('user', result.user);
-    return c.json(result);
-  });
-  app.use('/v1/*', async (c, next) => {
-    const header = c.req.header('authorization');
-    if (!header?.startsWith('Bearer ')) throw unauthenticated();
-    const token = header.slice(7);
-    c.set('user', await authenticate(db, token));
-    c.set('token', token);
-    await next();
-  });
-  app.get('/v1/me', (c) => c.json({ user: c.get('user') }));
-  app.post('/v1/auth/logout', async (c) => {
-    await readJson(c, z.strictObject({}));
-    await logout(db, c.get('user'), c.get('token'));
-    return c.json({ message: 'Logged out.' });
-  });
-  app.put('/v1/me/password', async (c) => {
-    limit();
-    const input = await readJson(c, passwordInput);
-    await changePassword(db, c.get('user'), c.get('token'), input.oldPassword, input.newPassword);
-    return c.json({ message: 'Password changed. All sessions revoked; log in again.' });
-  });
+  app.post('/v1/auth/login', loginHandler(db, limit));
+  // Register all protected routes after this boundary, including future feature groups.
+  app.use('/v1/*', requireAuthentication(db));
+  app.route('/v1', authRoutes(db, limit));
+  app.route('/v1', organisationRoutes(db));
+  app.route('/v1', crewRoutes(db));
   return app;
 }

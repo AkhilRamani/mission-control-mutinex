@@ -31,7 +31,7 @@ export function createClient(apiUrl: string, credentials?: Credentials) {
       });
     } catch {
       throw new CliError('Could not reach the API.', 'NETWORK_ERROR',
-        method === 'GET' ? 'Check the server and API URL.' : 'The result may be uncertain. Check your session before retrying; writes are never retried automatically.');
+        method === 'GET' ? 'Check the server and API URL.' : 'The result may be uncertain. Inspect the relevant list/show command before retrying; writes are never retried automatically.');
     }
     let result;
     try { result = await response.json(); } catch {

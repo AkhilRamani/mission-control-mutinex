@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, foreignKey, index, pgEnum, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 export const role = pgEnum('role', ['director', 'lead', 'crew']);
 
@@ -37,4 +37,52 @@ export const sessions = pgTable('sessions', {
   index('sessions_tenant_user').on(t.tenantId, t.userId),
   check('session_hash_format', sql`${t.tokenHash} ~ '^[a-f0-9]{64}$'`),
   check('session_expiry_finite', sql`isfinite(${t.expiresAt})`),
+]);
+
+export const crew = pgTable('crew', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  biography: text('biography').notNull().default(''),
+  active: boolean('active').notNull().default(true),
+}, (t) => [
+  unique('crew_tenant_id_id').on(t.tenantId, t.id),
+  unique('crew_tenant_user').on(t.tenantId, t.userId),
+  foreignKey({ columns: [t.tenantId, t.userId], foreignColumns: [users.tenantId, users.id] }),
+  check('crew_biography_length', sql`length(${t.biography}) <= 2000`),
+]);
+
+export const skills = pgTable('skills', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => organisations.id),
+  name: text('name').notNull(),
+}, (t) => [
+  unique('skills_tenant_id_id').on(t.tenantId, t.id),
+  unique('skills_tenant_name').on(t.tenantId, t.name),
+  check('skill_name_normalised', sql`${t.name} = lower(trim(${t.name})) AND length(${t.name}) BETWEEN 1 AND 80`),
+]);
+
+export const crewSkills = pgTable('crew_skills', {
+  tenantId: uuid('tenant_id').notNull(),
+  crewId: uuid('crew_id').notNull(),
+  skillId: uuid('skill_id').notNull(),
+  proficiency: integer('proficiency').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.tenantId, t.crewId, t.skillId] }),
+  foreignKey({ columns: [t.tenantId, t.crewId], foreignColumns: [crew.tenantId, crew.id] }),
+  foreignKey({ columns: [t.tenantId, t.skillId], foreignColumns: [skills.tenantId, skills.id] }),
+  index('crew_skills_tenant_skill').on(t.tenantId, t.skillId),
+  check('crew_skill_proficiency', sql`${t.proficiency} BETWEEN 1 AND 5`),
+]);
+
+export const availability = pgTable('availability', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull(),
+  crewId: uuid('crew_id').notNull(),
+  start: timestamp('start', { withTimezone: true }).notNull(),
+  end: timestamp('end', { withTimezone: true }).notNull(),
+}, (t) => [
+  foreignKey({ columns: [t.tenantId, t.crewId], foreignColumns: [crew.tenantId, crew.id] }),
+  index('availability_tenant_crew_start').on(t.tenantId, t.crewId, t.start),
+  check('availability_interval', sql`isfinite(${t.start}) AND isfinite(${t.end}) AND ${t.start} < ${t.end}`),
 ]);

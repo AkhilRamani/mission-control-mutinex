@@ -8,6 +8,13 @@
       "when": 1792819167448,
       "tag": "0000_nice_maelstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792820334416,
+      "tag": "0001_many_firelord",
+      "breakpoints": true
     }
   ]
 }

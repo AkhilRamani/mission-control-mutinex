@@ -1,6 +1,6 @@
 # Implementation plan
 
-Follow [DESIGN.md](DESIGN.md) for product rules, permissions, storage constraints, and concurrency. This file defines build order, not new behaviour. Record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
+Follow [DESIGN.md](DESIGN.md) for product rules, permissions, storage constraints, and concurrency. Use [SCHEMA.md](SCHEMA.md) for table definitions, relationships and database constraints. This file defines build order, not new behaviour. Record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
 
 Complete each step through database → domain operation → API → CLI → focused tests. Add migrations and fixtures as needed, not the entire application upfront. Steps 1–2 cover identity/crew, 3–4 planning/consent, 5–6 approval/operation, and 7 delivery.
 

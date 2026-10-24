@@ -1,32 +1,22 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { serve } from '@hono/node-server';
 import type { ServerType } from '@hono/node-server';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, eq, sql } from 'drizzle-orm';
-import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat, chmod, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { assertLocalDatabase, requiredEnv } from '../src/config.js';
 import { connectDatabase } from '../src/db/client.js';
-import { seedIdentity, seedPassword, tenantIds } from '../src/db/fixtures.js';
+import { seedDatabase, seedPassword, tenantIds } from '../src/db/fixtures.js';
 import { organisations, sessions, users } from '../src/db/schema.js';
 import { createApp } from '../src/api/app.js';
 import { authenticate, changePassword, login, tokenHash } from '../src/domain/auth.js';
+import { useTestDatabase } from './database.js';
+import { createCliRunner } from './cli-runner.js';
 
-// Fail closed before opening connections or deleting anything.
-const runtimeUrl = requiredEnv('TEST_DATABASE_URL');
-const migrationUrl = requiredEnv('TEST_MIGRATION_DATABASE_URL');
-assertLocalDatabase(runtimeUrl, 'mission_control_test');
-assertLocalDatabase(migrationUrl, 'mission_control_test');
-if (new URL(runtimeUrl).username === new URL(migrationUrl).username) throw new Error('Use separate test runtime/migration roles.');
-const runtime = connectDatabase(runtimeUrl);
-const migration = connectDatabase(migrationUrl);
+const { runtime, runtimeUrl } = useTestDatabase();
 let app: ReturnType<typeof createApp>;
 let logs: unknown[];
-let fixtureOrganisations: (typeof organisations.$inferSelect)[];
-let fixtureUsers: (typeof users.$inferSelect)[];
 
 function request(path: string, method = 'GET', body?: unknown, token?: string, extraHeaders: Record<string, string> = {}) {
   return app.request(`http://localhost${path}`, { method,
@@ -38,24 +28,10 @@ const credentials = (organisation = 'atlas', username = 'alex', password = seedP
 const signIn = (organisation = 'atlas', username = 'alex') => login(runtime.db, credentials(organisation, username));
 type LoginResponse = Omit<Awaited<ReturnType<typeof login>>, 'expiresAt'> & { expiresAt: string };
 
-beforeAll(async () => {
-  await migrate(migration.db, { migrationsFolder: './drizzle' });
-  await migration.db.execute(sql`TRUNCATE sessions, users, organisations`);
-  await seedIdentity(runtime.db);
-  fixtureOrganisations = await runtime.db.select().from(organisations);
-  fixtureUsers = await runtime.db.select().from(users);
-});
-beforeEach(async () => {
-  // Restore the actual seed instead of rehashing eight unchanged passwords for every test.
-  await migration.db.transaction(async (tx) => {
-    await tx.execute(sql`TRUNCATE sessions, users, organisations`);
-    await tx.insert(organisations).values(fixtureOrganisations);
-    await tx.insert(users).values(fixtureUsers);
-  });
+beforeEach(() => {
   logs = [];
   app = createApp(runtime.db, { log: (entry) => logs.push(entry) });
 });
-afterAll(async () => { await Promise.all([runtime.pool.end(), migration.pool.end()]); });
 
 describe('real PostgreSQL authentication', () => {
   it('logs in all roles in both tenants with explicit public identity fields', async () => {
@@ -177,7 +153,7 @@ describe('real PostgreSQL authentication', () => {
   });
 
   it('refuses reseeding and preserves existing identities', async () => {
-    await expect(seedIdentity(runtime.db)).rejects.toThrow('already contains');
+    await expect(seedDatabase(runtime.db)).rejects.toThrow('already contains');
     expect(await runtime.db.select().from(organisations)).toHaveLength(2);
     expect(await runtime.db.select().from(users)).toHaveLength(8);
   });
@@ -243,16 +219,7 @@ describe('real CLI over HTTP', () => {
     });
     const stop = () => new Promise<void>((resolveStop, reject) => server!.close((error) => error ? reject(error) : resolveStop()));
     const port = await start();
-    const cli = (args: string[], input = '') => new Promise<{ stdout: string; stderr: string; code: number | null }>((resolveRun, reject) => {
-      const child = spawn(process.execPath, ['--import', 'tsx', resolve('src/cli/index.ts'), '--json', ...args], {
-        env: { ...process.env, MC_CONFIG_DIR: configDir, MC_API_URL: `http://127.0.0.1:${port}` }, stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      let stdout = '', stderr = '';
-      child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-      child.on('error', reject); child.on('close', (code) => resolveRun({ stdout, stderr, code }));
-      child.stdin.end(input);
-    });
+    const cli = createCliRunner(configDir, `http://127.0.0.1:${port}`);
     try {
       const login = await cli(['login', '--org', 'atlas', '--username', 'alex', '--password-stdin'], `${seedPassword}\n`);
       expect(login.code, login.stderr).toBe(0);

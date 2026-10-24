@@ -14,7 +14,7 @@ export function useTestDatabase() {
   assertLocalDatabase(migrationUrl, 'mission_control_test');
   if (new URL(runtimeUrl).username === new URL(migrationUrl).username) throw new Error('Use separate test runtime/migration roles.');
   const runtime = connectDatabase(runtimeUrl), migration = connectDatabase(migrationUrl);
-  const truncate = sql`TRUNCATE mission_events, position_skills, positions, missions, availability, crew_skills, crew, skills, sessions, users, organisations`;
+  const truncate = sql`TRUNCATE mission_events, assignments, position_skills, positions, missions, availability, crew_skills, crew, skills, sessions, users, organisations`;
   async function snapshot() {
     return { organisations: await runtime.db.select().from(organisations), users: await runtime.db.select().from(users),
       crew: await runtime.db.select().from(crew), skills: await runtime.db.select().from(skills),

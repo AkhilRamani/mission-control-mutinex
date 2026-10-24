@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Database } from '../db/client.js';
 import type { Env } from './context.js';
 import * as crew from '../domain/crew.js';
+import { crewHistory } from '../domain/missions/assignments.js';
 import { displayName, instant, pageInput, searchInput, parseInput, readJson } from './validation.js';
 
 const uuid = z.uuid();
@@ -19,6 +20,7 @@ export function crewRoutes(db: Database) {
     return c.json(await crew.createCrew(db, c.get('user'), input.userId), 201);
   });
   app.get('/crew/:id', async (c) => c.json(await crew.getCrew(db, c.get('user'), parseInput(crewId, c.req.param('id')))));
+  app.get('/crew/:id/history', async (c) => c.json(await crewHistory(db, c.get('user'), parseInput(crewId, c.req.param('id')), parseInput(pageInput, c.req.query()))));
   app.patch('/crew/:id', async (c) => c.json(await crew.updateCrew(db, c.get('user'), parseInput(crewId, c.req.param('id')),
     await readJson(c, profileInput))));
   app.put('/crew/:id/skills/:skillId', async (c) => {

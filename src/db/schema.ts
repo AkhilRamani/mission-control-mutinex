@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, foreignKey, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, foreignKey, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 export const role = pgEnum('role', ['director', 'lead', 'crew']);
 
@@ -157,5 +157,37 @@ export const missionEvents = pgTable('mission_events', {
   check('event_version', sql`${t.missionVersion} >= 1`),
   check('event_time_finite', sql`isfinite(${t.occurredAt})`),
   check('event_payload_object', sql`jsonb_typeof(${t.payload}) = 'object'`),
-  check('event_kind', sql`${t.kind} IN ('mission_created', 'mission_updated', 'position_added', 'position_updated', 'position_removed')`),
+  check('event_kind', sql`${t.kind} IN ('mission_created', 'mission_updated', 'position_added', 'position_updated', 'position_removed', 'proposals_updated', 'assignment_responded')`),
+]);
+
+export const assignmentState = pgEnum('assignment_state', ['proposed', 'accepted', 'declined', 'confirmed', 'withdrawn', 'released']);
+
+export const assignments = pgTable('assignments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull(),
+  missionId: uuid('mission_id').notNull(),
+  positionId: uuid('position_id').notNull(),
+  crewId: uuid('crew_id').notNull(),
+  state: assignmentState('state').notNull().default('proposed'),
+  respondedAt: timestamp('responded_at', { withTimezone: true }),
+  bookedStart: timestamp('booked_start', { withTimezone: true }),
+  bookedEnd: timestamp('booked_end', { withTimezone: true }),
+}, (t) => [
+  foreignKey({ columns: [t.tenantId, t.missionId, t.positionId], foreignColumns: [positions.tenantId, positions.missionId, positions.id] }),
+  foreignKey({ columns: [t.tenantId, t.crewId], foreignColumns: [crew.tenantId, crew.id] }),
+  uniqueIndex('assignments_current_position').on(t.tenantId, t.missionId, t.positionId)
+    .where(sql`${t.state} IN ('proposed', 'accepted', 'confirmed')`),
+  uniqueIndex('assignments_current_crew').on(t.tenantId, t.missionId, t.crewId)
+    .where(sql`${t.state} IN ('proposed', 'accepted', 'confirmed')`),
+  index('assignments_tenant_crew_mission').on(t.tenantId, t.crewId, t.missionId),
+  index('assignments_tenant_mission_position').on(t.tenantId, t.missionId, t.positionId),
+  check('assignment_response', sql`
+    (${t.state} = 'proposed' AND ${t.respondedAt} IS NULL) OR
+    (${t.state} IN ('accepted', 'declined', 'confirmed') AND ${t.respondedAt} IS NOT NULL AND isfinite(${t.respondedAt})) OR
+    (${t.state} IN ('withdrawn', 'released') AND (${t.respondedAt} IS NULL OR isfinite(${t.respondedAt})))`),
+  check('assignment_booking', sql`
+    (${t.state} = 'confirmed' AND ${t.bookedStart} IS NOT NULL AND ${t.bookedEnd} IS NOT NULL
+      AND isfinite(${t.bookedStart}) AND isfinite(${t.bookedEnd}) AND ${t.bookedStart} < ${t.bookedEnd}) OR
+    (${t.state} <> 'confirmed' AND ${t.bookedStart} IS NULL AND ${t.bookedEnd} IS NULL)`),
+  // btree_gist confirmed-booking exclusion is maintained in the SQL migration.
 ]);

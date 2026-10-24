@@ -1,6 +1,6 @@
 # Database schema
 
-Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Eleven tables implemented; assignments planned.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
+Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **All twelve tables implemented through step 4; approval and operation follow in steps 5–6.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
 
 ## Conventions
 
@@ -46,7 +46,7 @@ Table columns below extend the common columns.
 
 `role`: `director`, `lead`, `crew`. Any role may have a crew profile. `active` affects staffing eligibility only.
 
-## Mission tables: step 3 implemented; step 4 planned
+## Mission tables: steps 3–4 implemented
 
 | Table / introduction | Columns | Essential constraints |
 | --- | --- | --- |
@@ -111,19 +111,13 @@ One event per actual mutation, at its resulting mission version, in the same tra
 
 `kind` has a fixed domain/database CHECK allowlist, introduced by step: `mission_created`, `mission_updated`, `position_added`, `position_updated`, `position_removed`, `proposals_updated`, `assignment_responded`, `mission_submitted`, `mission_withdrawn`, `mission_rejected`, `mission_approved`, `mission_completed`, `mission_cancelled`.
 
-Domain-validated payloads retain changed values/reasons and relevant proposal/consent snapshots: title, brief, times, position label, skill IDs/names/levels, assignment/crew IDs and response changes. Material edits preserve before/after values and invalidated acceptances; releases preserve former booking intervals.
+Domain-validated payloads retain changed values/reasons and relevant proposal/consent snapshots: title, brief, times, position label, skill IDs/names/levels, assignment/crew IDs and response changes. `payload.assignmentChanges` records before/after attempt snapshots with the offered plan and position; Crew history filters and allowlists only their own changes before pagination. Material edits preserve before/after values and invalidated acceptances; releases preserve former booking intervals.
 
 Snapshot IDs are historical values, not FKs or access grants. Build payloads from scoped rows under the mission lock. Crew receives only its own assignment/relevant plan projection, never raw event JSON. Runtime grants: SELECT/INSERT only; revoke UPDATE/DELETE.
 
 ## Additional indexes
 
-PK/unique/exclusion constraints already supply indexes. Add:
-
-| Implemented | Planned |
-| --- | --- |
-| `sessions(tenant_id,user_id)`; `crew_skills(tenant_id,skill_id)` | `assignments(tenant_id,crew_id,mission_id)` including terminal attempts |
-| `availability(tenant_id,crew_id,start)` | `assignments(tenant_id,mission_id,position_id)` across all states for history/FK lookups |
-| `missions(tenant_id,state,id)`; `position_skills(tenant_id,skill_id)` | |
+Implemented beyond PK/unique/exclusion indexes: `sessions(tenant_id,user_id)`, `crew_skills(tenant_id,skill_id)`, `availability(tenant_id,crew_id,start)`, `missions(tenant_id,state,id)`, `position_skills(tenant_id,skill_id)`, `assignments(tenant_id,crew_id,mission_id)` and `assignments(tenant_id,mission_id,position_id)` (including terminal attempts).
 
 Existing unique prefixes cover tenant listings, position order and mission history. Substring search scans tenant rows initially.
 

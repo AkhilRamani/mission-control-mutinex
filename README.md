@@ -1,6 +1,6 @@
 # Mission Control
 
-TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–3, authentication, organisation/crew management and draft mission planning.** Next steps follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint. [SCHEMA.md](SCHEMA.md) documents implemented and planned tables.
+TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–4, authentication, crew management, mission planning, matching and consent.** Next steps follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint. [SCHEMA.md](SCHEMA.md) documents implemented and planned tables.
 
 ## Run locally
 
@@ -17,7 +17,7 @@ npm run dev
 
 The API listens at `http://127.0.0.1:3000`; PostgreSQL at `127.0.0.1:55432`. Set `PORT` in `.env` if needed. Data survives restarts in the Compose volume. Seeding is atomic and refuses a nonempty database. Repeated migration runs are safe. Use `docker compose stop` to stop PostgreSQL without deleting data.
 
-Compose creates separate database-owner migration roles and unprivileged runtime roles for development and tests. The API refuses superuser/role-administration credentials. For an existing local PostgreSQL 17 instance, run `docker/init.sql` once with `psql` as its administrator, then adjust the ports in `.env`. That script provisions dedicated databases/roles and is not repeatable; it does not drop existing objects. No extension is needed yet.
+Compose creates separate database-owner migration roles and unprivileged runtime roles for development and tests. The API refuses superuser/role-administration credentials. For an existing local PostgreSQL 17 instance, run `docker/init.sql` once with `psql` as its administrator, then adjust the ports in `.env`. That script provisions dedicated databases/roles and is not repeatable; it does not drop existing objects. Migration credentials install the trusted `btree_gist` extension for booking overlap protection.
 
 **Upgrading:** run `npm run db:migrate` and restart the API. Existing data remains intact; migrations do not insert fixtures. Use the CLI below to add profiles/skills/missions. `db:seed` requires an empty database and never resets existing data.
 
@@ -106,9 +106,38 @@ npm run mc -- missions history --mission <mission-id>
 npm run mc -- positions remove --mission <mission-id> --position <position-id> --version 5 --yes
 ```
 
-Directors can edit any tenant draft; Leads only their own. Other Leads can read it; Crew has no mission access until assignments arrive in step 4. Creation sets the immutable owner. Each position takes one person and may require several skills: `--requires piloting:3 medical:2` (exact names or UUIDs). Updates replace the requirement set; `--clear-requirements` empties it. Empty plans/requirements are allowed while drafting. Removed positions stay visible and their ordinals are never reused.
+Directors can edit any tenant draft; Leads only their own. Other Leads can read it; Crew sees only missions with their current or past assignments, with their own positions and filtered history. Creation sets the immutable owner. Each position takes one person and may require several skills: `--requires piloting:3 medical:2` (exact names or UUIDs). Updates replace the requirement set; `--clear-requirements` empties it. Empty plans/requirements are allowed while drafting. Removed positions stay visible and their ordinals are never reused.
 
-Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited. Matching, assignments, approval and operation arrive in steps 4–6; representative mission seeds arrive in step 7.
+Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited. Approval and operation arrive in steps 5–6; representative mission seeds arrive in step 7.
+
+## Match crew and obtain consent
+
+Use a future draft with Pilot (`piloting:3`) and Medic (`medical:3`) positions. Atlas seeds match Sam to Pilot and Alex to Medic. Read IDs and the current mission version from command output:
+
+```sh
+# As atlas/lead:
+npm run mc -- missions match --mission <mission-id>
+npm run mc -- missions propose --mission <mission-id> --version <reviewed-version> --suggested
+# Or replace the roster with explicit pairs, including a partial roster:
+npm run mc -- missions propose --mission <mission-id> --version <reviewed-version> --pairs <pilot-position-id>=<sam-crew-id> <medic-position-id>=<alex-crew-id>
+npm run mc -- logout
+
+npm run mc -- login --org atlas --username alex
+npm run mc -- assignments list --mine
+npm run mc -- assignments show --assignment <assignment-id>
+npm run mc -- assignments accept --assignment <assignment-id>
+# Interactive acceptance displays and confirms the exact plan; scripts supply its --version.
+npm run mc -- crew history --crew me
+npm run mc -- missions history --mission <mission-id>
+```
+
+Repeat review/accept as Sam. Each response changes the mission version, so obtain the latest version before the next scripted response. `assignments decline/retract --assignment <id> --version <version>` declines a proposal or retracts acceptance back to proposed. Declined/withdrawn attempts are terminal; proposing again creates a new attempt. Owner/Director `assignments remove --assignment <id> --version <version> --yes` withdraws one proposal. All attempts remain in history.
+
+Matching reads the full tenant pool under one consistent snapshot. Eligibility requires an active profile, every skill threshold, full availability and no confirmed overlap. Augmenting paths guarantee the largest roster, including a full roster whenever feasible; they can move a flexible person to cover a scarce skill. Output explains proficiency, exclusions, competing needs, coverage, snapshot/version and workload. Candidate order prefers fewer confirmed hours in the proposed start month (UTC, clipped to month boundaries), then crew UUID. Completed confirmed work counts; tentative/released work does not. This is a heuristic, without a capacity cap or global fairness guarantee.
+
+Matching does not change proposals or pin existing choices. `--suggested` applies only a complete match and checks the supplied mission version. Manual proposals replace the entire current roster: omitted positions are withdrawn, unchanged pairs retain consent, and swaps are atomic. The API also accepts an empty roster. A changed profile or booking can invalidate a suggestion before it is applied; review `INELIGIBLE_CREW` and rematch.
+
+Acceptance is personal consent, with no reservation; tentative overlaps are allowed. Title/brief/time edits reset all acceptances; position label/requirement edits reset only that position; removing/replacing a position withdraws its attempt. History retains the prior plan and responses. Crew can read only their own assignments, relevant event projections and assigned positions, including past attempts. Approval and confirmed-work profile guards arrive together in step 5; booking fixtures currently exercise eligibility and database constraints in tests.
 
 ## API
 
@@ -136,12 +165,19 @@ JSON under `/v1`; authenticated requests use `Authorization: Bearer <token>`. On
 | `POST /v1/missions/:id/positions` | `{version, label, requirements?: [{skillId, minProficiency}]}` |
 | `PATCH /v1/missions/:id/positions/:positionId` | `{version, label?, requirements?}`; replaces supplied requirements |
 | `DELETE /v1/missions/:id/positions/:positionId` | JSON body `{version}`; soft-remove |
+| `GET /v1/missions/:id/match` | Snapshot, mission version, explained roster, exclusions and unfilled positions |
+| `PUT /v1/missions/:id/proposals` | `{version, proposals: [{positionId, crewId}]}`; replace current roster |
+| `DELETE /v1/missions/:id/proposals/:assignmentId` | `{version}`; withdraw one current proposal |
+| `GET /v1/assignments` | Paginated visible attempts; `mine=true` restricts any role to its own |
+| `GET /v1/assignments/:id` | Own or planner-visible attempt, plan, position and mission version |
+| `POST /v1/assignments/:id/{accept,decline,retract}` | `{version}`; owner response, updated assignment/version |
+| `GET /v1/crew/:id/history` | Paginated retained attempts, own Crew or tenant planner visibility |
 
-Crew `:id` accepts a UUID or `me`. Lists use `limit`/`offset`; members/crew/skills/missions accept literal substring `q`. Mission search covers title/brief and accepts a `state` filter. Creation returns 201. Mission/position writes return the complete updated mission; other deletes return `{message}`. PATCH requires at least one editable field. Names/biographies are trimmed; skill names are lowercase. Display/organisation names, mission titles and position labels are 1–120 characters; skill names 1–80; biographies at most 2000 and briefs 4000. Usernames are 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. Account roles and organisation slugs are immutable.
+Crew `:id` accepts a UUID or `me`. Lists use `limit`/`offset`; members/crew/skills/missions accept literal substring `q`. Mission search covers title/brief and accepts a `state` filter. Creation returns 201. Mission/position/proposal writes return the updated mission with visible positions and assignment attempts; other deletes return `{message}`. PATCH requires at least one editable field. Names/biographies are trimmed; skill names are lowercase. Display/organisation names, mission titles and position labels are 1–120 characters; skill names 1–80; biographies at most 2000 and briefs 4000. Usernames are 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. Account roles and organisation slugs are immutable.
 
 Tenant/user identity comes only from the session. Login names are trimmed/lowercased; passwords are not. New passwords require 12–128 characters. Unknown fields are rejected. Error responses contain `{error: {code, message, recovery, requestId}}`; request IDs also appear in headers and structured logs. Logs contain route/status/timing/actor/tenant, never request bodies, passwords, tokens or SQL.
 
-Errors: 400 correct input; 401 check credentials/login again; 403 use an authorised account; 404 list visible resources and check IDs (missing/foreign/private records are indistinguishable); 409 inspect existing records/references before retrying; 429 wait; 500 use the request ID; 503 check database readiness. Login and password changes share one process-wide budget of 10 attempts per minute. This simple limit suits the loopback-only service; local users share the budget and restarting the process resets it. JSON bodies are limited to 16 KiB.
+Errors: 400 correct input; 401 check credentials/login again; 403 use an authorised account; 404 list visible resources and check IDs (missing/foreign/private records are indistinguishable); 409 refresh the mission/assignments before retrying; 422 correct the identified eligibility problem or rematch; 429 wait; 500 use the request ID; 503 check database readiness. Login and password changes share one process-wide budget of 10 attempts per minute. This simple limit suits the loopback-only service; local users share the budget and restarting the process resets it. JSON bodies are limited to 16 KiB.
 
 Passwords use Node scrypt (`N=32768, r=8, p=3`, random 16-byte salt, 64-byte key, 64 MiB memory ceiling). Sessions use 32 random bytes, SHA-256 token hashes and 24-hour expiry. Login/password changes serialize on the user row; password changes recheck the session after acquiring the lock. Composite foreign keys prevent cross-tenant session references. The application scopes reads; there is no RLS.
 
@@ -156,16 +192,16 @@ npm run start
 
 Stop the development server before `start` on the same port. `build` emits Node ESM into `dist`. Tests migrate and reset **only** a loopback database named `mission_control_test`; both test URLs and distinct test runtime/migration roles are required. Test/seed URLs cannot contain query parameters or fragments, preventing connection-field overrides. Tests never fall back to the development database. The suite exercises real PostgreSQL constraints, deterministic lock races, safe failure responses, and real CLI subprocesses over HTTP. `npm run test:unit` needs no database.
 
-Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain operations live in `domain/missions/planning.ts`, keeping drafts, positions and history together. Add sibling workflow modules as matching, assignments and lifecycle operations are implemented; extract shared helpers only when another module needs them.
+Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain modules separate `planning.ts` (draft edits), `matching.ts` (candidate loading and match responses), `matcher.ts` (pure eligibility and team selection), `assignments.ts` (proposals/responses), and `reads.ts` (visible mission/history views). `shared.ts` contains their scoped reads, permission/version checks and atomic event handling. Transactions stay with each public mutation.
 
 - `api/app.ts` owns shared HTTP policy and route registration. Login/health are public; every other route group mounts after authentication. Routes validate input and call domain functions.
 - `domain/` owns permissions, tenant-scoped queries and transactions. Crew changes share crew-row locks; planning changes share mission-row locks. Mission detail/history reads use a consistent snapshot. No repository or generic CRUD layer.
-- `cli/index.ts` registers commands and handles output/errors; feature files use one HTTP client and credential context. Type-only domain imports reuse response shapes without loading database code into the CLI.
+- `cli/index.ts` registers commands and handles output/errors; feature files use one HTTP client and credential context. Shared mission/assignment formatting lives in `cli/mission-output.ts`, keeping command modules independent. Type-only domain imports reuse response shapes without loading database code into the CLI.
 - `db/` keeps one schema, migrations and fixtures. Tests share guarded database setup, an authenticated API test client and a real CLI subprocess runner; integration files run serially against the dedicated test database.
 
 Change the schema, run `npm run db:generate`, inspect the generated SQL, then migrate. Do not edit applied migrations. Composite FKs enforce tenant/parent relationships; no cascading deletions. Mission event UPDATE/DELETE privileges are revoked from runtime roles in the migration; domain functions append events alongside changes.
 
-Step 2 limits: profile edits use last-write-wins; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`. Crew history arrives with assignments in step 4, and confirmed-booking edit guards in step 5.
+Profile limits: profile edits use last-write-wins; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`. Confirmed-booking edit guards arrive with approval in step 5.
 
 Current limits: local evaluation only, one saved CLI session, Unix credential permissions, process-local rate limits, no expired-session cleanup job, no public account provisioning or recovery. PostgreSQL uses a pinned major version; npm dependencies are pinned in `package.json` and `package-lock.json`. Drizzle Kit's development-only loader currently carries an esbuild development-server advisory; this project does not run its server or Studio. Runtime dependencies have no reported audit findings at implementation time. No deployment infrastructure or production identity integration is included.
 

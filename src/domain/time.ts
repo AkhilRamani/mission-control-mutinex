@@ -11,3 +11,20 @@ export function coversInterval(windows: Interval[], target: Interval): boolean {
   }
   return false;
 }
+
+export function utcMonth(start: Date): Interval {
+  const monthStart = new Date(start);
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const monthEnd = new Date(monthStart);
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+  return { start: monthStart, end: monthEnd };
+}
+
+export function workloadHours(bookings: readonly Interval[], month: Interval) {
+  return bookings.reduce((totalHours, booking) => {
+    const overlapStart = Math.max(booking.start.getTime(), month.start.getTime());
+    const overlapEnd = Math.min(booking.end.getTime(), month.end.getTime());
+    return totalHours + Math.max(0, overlapEnd - overlapStart) / 3_600_000;
+  }, 0);
+}

@@ -18,7 +18,7 @@ function visibleCrew(user: Identity, id?: string) {
   return and(eq(crew.tenantId, user.tenantId), user.role === 'crew' ? eq(crew.userId, user.id) : undefined,
     id === 'me' ? eq(crew.userId, user.id) : id ? eq(crew.id, id) : undefined);
 }
-async function findCrew(db: Database | Transaction, user: Identity, id: string, lock = false) {
+export async function findCrew(db: Database | Transaction, user: Identity, id: string, lock = false) {
   const query = db.select(crewFields).from(crew)
     .innerJoin(users, and(eq(users.tenantId, crew.tenantId), eq(users.id, crew.userId))).where(visibleCrew(user, id));
   const [profile] = await (lock ? query.for('update', { of: crew }) : query);

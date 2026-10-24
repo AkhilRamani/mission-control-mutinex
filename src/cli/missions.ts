@@ -1,30 +1,19 @@
-import { Command, InvalidArgumentError, Option } from 'commander';
+import { Command, Option } from 'commander';
 import { z } from 'zod';
-import type { getMission, missionHistory, RequirementInput } from '../domain/missions/planning.js';
+import type { RequirementInput } from '../domain/missions/planning.js';
 import type { Page } from '../domain/pagination.js';
 import type { CommandContext, Print } from './context.js';
+import { matchDetails, missionDetails, missionRow } from './mission-output.js';
+import type { Mission, MissionSummary, History, Match } from './mission-output.js';
 import { CliError } from './errors.js';
-import { confirmRemoval } from './input.js';
+import { confirmRemoval, parseVersion } from './input.js';
 import { listOptions, listing, query } from './pagination.js';
 
-type StoredMission = Awaited<ReturnType<typeof getMission>>;
-type MissionSummary = Omit<StoredMission, 'start' | 'end' | 'createdAt' | 'positions'> & { start: string; end: string; createdAt: string };
-type Mission = MissionSummary & { positions: (Omit<StoredMission['positions'][number], 'removedAt'> & { removedAt: string | null })[] };
-type History = Omit<Awaited<ReturnType<typeof missionHistory>>, 'items'> & {
-  items: (Omit<Awaited<ReturnType<typeof missionHistory>>['items'][number], 'occurredAt'> & { occurredAt: string })[];
-};
 type Request = Awaited<ReturnType<CommandContext>>['request'];
 const path = (id: string) => `/missions/${encodeURIComponent(id)}`;
-const row = (m: MissionSummary) => `${m.id} | v${m.version} | ${m.state} | ${m.title} | ${m.start} → ${m.end}`;
-const details = (m: Mission) => `${row(m)}\nOwner: ${m.ownerId}\nBrief: ${m.brief || '(empty)'}\nPositions:\n${m.positions.length
-  ? m.positions.map((p) => `${p.id} | #${p.ordinal} ${p.label}${p.removedAt ? ' (removed)' : ''} | ${p.requirements.length
-    ? p.requirements.map((r) => `${r.name}:${r.minProficiency} [${r.skillId}]`).join(', ') : 'no requirements'}`).join('\n') : '(none)'}`;
 
 function reviewedVersion(command: Command) {
-  return command.requiredOption('--version <number>', 'mission version you reviewed with missions show', (value) => {
-    if (!/^[1-9]\d*$/.test(value) || Number(value) > 2147483647) throw new InvalidArgumentError('Expected a positive integer version.');
-    return Number(value);
-  });
+  return command.requiredOption('--version <number>', 'mission version you reviewed with missions show', parseVersion);
 }
 function planOptions(command: Command) {
   return command.option('--title <text>', 'mission title').option('--brief <text>', 'mission brief; empty string clears it')
@@ -63,30 +52,59 @@ export function registerMissionCommands(program: Command, context: CommandContex
     .choices(['draft', 'submitted', 'approved', 'completed', 'cancelled'])).action(async (opts) => {
     const { request } = await context();
     const result = await request<Page<MissionSummary>>(`/missions${query(opts)}${opts.state ? `&state=${opts.state}` : ''}`);
-    print(result, listing(result, row));
+    print(result, listing(result, missionRow));
   });
   missions.command('create').requiredOption('--title <text>', 'mission title').option('--brief <text>', 'mission brief', '')
     .requiredOption('--start <timestamp>', 'future ISO timestamp with Z or offset (inclusive)')
     .requiredOption('--end <timestamp>', 'ISO timestamp with Z or offset (exclusive)').action(async (opts) => {
       const { request } = await context();
       const result = await request<Mission>('/missions', 'POST', { title: opts.title, brief: opts.brief, start: opts.start, end: opts.end });
-      print(result, details(result));
+      print(result, missionDetails(result));
     });
   missions.command('show').requiredOption('--mission <id>', 'mission ID').action(async (opts) => {
     const { request } = await context();
     const result = await request<Mission>(path(opts.mission));
-    print(result, details(result));
+    print(result, missionDetails(result));
   });
+  missions.command('match').requiredOption('--mission <id>', 'draft mission ID').action(async (opts) => {
+    const { request } = await context();
+    const result = await request<Match>(`${path(opts.mission)}/match`);
+    print(result, matchDetails(result));
+  });
+  reviewedVersion(missions.command('propose').description('Replace the roster; omitted positions are withdrawn. Partial manual rosters are allowed.')
+    .requiredOption('--mission <id>', 'draft mission ID')
+    .addOption(new Option('--pairs <position=crew...>', 'position and crew IDs').conflicts('suggested'))
+    .addOption(new Option('--suggested', 'apply a full fresh match using the reviewed mission version').conflicts('pairs')))
+    .action(async (opts) => {
+      const { request } = await context();
+      let proposals: { positionId: string; crewId: string }[];
+      if (opts.suggested) {
+        const match = await request<Match>(`${path(opts.mission)}/match`);
+        if (match.version !== opts.version) throw new CliError('The mission has changed.', 'STALE_VERSION', 'Run missions show and match, then use the reviewed version.');
+        if (!match.complete) throw new CliError('A full roster is not possible.', 'INCOMPLETE_MATCH', 'Run missions match for exclusions; revise the plan or propose explicit partial pairs.');
+        proposals = match.roster.map(({ positionId, crewId }) => ({ positionId, crewId }));
+      } else if (opts.pairs) {
+        proposals = opts.pairs.map((value: string) => {
+          const parts = value.split('=');
+          if (parts.length !== 2 || !parts.every((p) => z.uuid().safeParse(p).success)) {
+            throw new CliError('Invalid proposal pair.', 'INVALID_ARGUMENT', 'Use --pairs <position-id>=<crew-id> ... from missions show and crew list.');
+          }
+          return { positionId: parts[0]!, crewId: parts[1]! };
+        });
+      } else throw new CliError('Choose a roster.', 'INVALID_ARGUMENT', 'Use --suggested or --pairs <position-id>=<crew-id> ... .');
+      const result = await request<Mission>(`${path(opts.mission)}/proposals`, 'PUT', { version: opts.version, proposals });
+      print(result, missionDetails(result));
+    });
   reviewedVersion(planOptions(missions.command('update').requiredOption('--mission <id>', 'mission ID'))).action(async (opts) => {
     const { request } = await context();
     const result = await request<Mission>(path(opts.mission), 'PATCH', { version: opts.version, title: opts.title, brief: opts.brief, start: opts.start, end: opts.end });
-    print(result, details(result));
+    print(result, missionDetails(result));
   });
   listOptions(missions.command('history').requiredOption('--mission <id>', 'mission ID'), false).action(async (opts) => {
     const { request } = await context();
     const result = await request<History>(`${path(opts.mission)}/history${query(opts)}`);
     print(result, `Mission ${result.missionId} | current v${result.version}\n${listing(result,
-      (e) => `v${e.missionVersion} | ${e.occurredAt} | ${e.kind} | actor ${e.actorId}\n${JSON.stringify(e.payload, null, 2)}`)}`);
+      (e) => `v${e.missionVersion} | ${e.occurredAt} | ${e.kind}${'actorId' in e ? ` | actor ${e.actorId}` : ''}\n${JSON.stringify(e.payload, null, 2)}`)}`);
   });
 
   const positions = program.command('positions').description('Draft positions and their required skills; mutations return the updated mission');
@@ -96,7 +114,7 @@ export function registerMissionCommands(program: Command, context: CommandContex
     const result = await request<Mission>(`${path(opts.mission)}/positions`, 'POST', {
       version: opts.version, label: opts.label, requirements: await requirements(request, opts.requires ?? []),
     });
-    print(result, details(result));
+    print(result, missionDetails(result));
   });
   reviewedVersion(positions.command('update').requiredOption('--mission <id>', 'mission ID').requiredOption('--position <id>', 'position ID from missions show')
     .option('--label <text>', 'position label').option('--requires <skill:level...>', 'replace all requirements with these exact skill names or IDs')
@@ -106,13 +124,13 @@ export function registerMissionCommands(program: Command, context: CommandContex
       version: opts.version, label: opts.label,
       requirements: opts.clearRequirements ? [] : opts.requires ? await requirements(request, opts.requires) : undefined,
     });
-    print(result, details(result));
+    print(result, missionDetails(result));
   });
   reviewedVersion(positions.command('remove').requiredOption('--mission <id>', 'mission ID').requiredOption('--position <id>', 'position ID from missions show')
     .option('--yes', 'confirm without prompting')).action(async (opts) => {
     const { request } = await context();
     await confirmRemoval(`Remove position ${opts.position} from mission ${opts.mission}?`, Boolean(opts.yes));
     const result = await request<Mission>(`${path(opts.mission)}/positions/${encodeURIComponent(opts.position)}`, 'DELETE', { version: opts.version });
-    print(result, details(result));
+    print(result, missionDetails(result));
   });
 }

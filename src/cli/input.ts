@@ -1,6 +1,12 @@
 import password from '@inquirer/password';
 import { createInterface } from 'node:readline/promises';
 import { CliError } from './errors.js';
+import { InvalidArgumentError } from 'commander';
+
+export function parseVersion(value: string) {
+  if (!/^[1-9]\d*$/.test(value) || Number(value) > 2147483647) throw new InvalidArgumentError('Expected a positive integer version.');
+  return Number(value);
+}
 
 export async function confirmRemoval(message: string, yes: boolean): Promise<void> {
   if (yes) return;

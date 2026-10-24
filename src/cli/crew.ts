@@ -4,6 +4,8 @@ import type { getCrew, listCrew } from '../domain/crew.js';
 import type { Page } from '../domain/pagination.js';
 import type { CommandContext, Print } from './context.js';
 import { listOptions, query, listing } from './pagination.js';
+import { assignmentRow } from './mission-output.js';
+import type { AssignmentPage } from './mission-output.js';
 
 type Profile = Awaited<ReturnType<typeof getCrew>>;
 type CrewSummary = Awaited<ReturnType<typeof listCrew>>['items'][number];
@@ -32,6 +34,11 @@ export function registerCrewCommands(program: Command, context: CommandContext, 
     const { request } = await context();
     const result = await request<Profile>(profilePath(opts.crew));
     print(result, profileText(result));
+  });
+  listOptions(crew.command('history').option('--crew <id|me>', 'crew ID, or your own profile', 'me'), false).action(async (opts) => {
+    const { request } = await context();
+    const result = await request<AssignmentPage & { crewId: string }>(`${profilePath(opts.crew)}/history${query(opts)}`);
+    print(result, `Crew ${result.crewId}\n${listing(result, assignmentRow)}`);
   });
   crew.command('update').description('Update own name/biography; Directors may edit others and active status')
     .option('--crew <id|me>', 'crew ID, or your own profile', 'me').option('--name <name>', 'display name')

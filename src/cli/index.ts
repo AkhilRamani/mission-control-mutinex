@@ -4,6 +4,7 @@ import { registerCrewCommands } from './crew.js';
 import { registerAuthCommands } from './auth.js';
 import { registerOrganisationCommands } from './organisation.js';
 import { registerMissionCommands } from './missions.js';
+import { registerAssignmentCommands } from './assignments.js';
 import { createContext } from './context.js';
 
 const program = new Command().name('mc').description('Mission Control API client')
@@ -21,6 +22,7 @@ registerAuthCommands(program, context, print);
 registerOrganisationCommands(program, context, print);
 registerCrewCommands(program, context, print);
 registerMissionCommands(program, context, print);
+registerAssignmentCommands(program, context, print);
 
 try {
   if (process.argv.length === 2) program.help();

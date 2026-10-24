@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run",
-    "test:unit": "npm test -- tests/unit.test.ts tests/cli.test.ts tests/time.test.ts"
+    "test:unit": "npm test -- tests/unit.test.ts tests/cli.test.ts tests/time.test.ts tests/matching.test.ts"
   },
   "license": "ISC",
   "devDependencies": {

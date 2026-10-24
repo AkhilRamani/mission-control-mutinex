@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+
 import { clearCredentials, saveCredentials } from './credentials.js';
 import { createClient } from './client.js';
 import { CliError } from './errors.js';
@@ -11,6 +12,7 @@ function describe(user: Identity) {
 }
 
 export function registerAuthCommands(program: Command, context: CommandContext, print: Print) {
+
   program.command('login').description('Log in and save a private, server-bound session')
     .requiredOption('--org <slug>', 'organisation slug')
     .requiredOption('--username <name>', 'username')
@@ -22,8 +24,9 @@ export function registerAuthCommands(program: Command, context: CommandContext, 
       const result = await request<{ token: string; expiresAt: string; user: Identity }>('/auth/login', 'POST', {
         organisation: opts.org, username: opts.username, password,
       });
-      try { await saveCredentials({ apiUrl, token: result.token, expiresAt: result.expiresAt }); }
-      catch (error) {
+      try {
+        await saveCredentials({ apiUrl, token: result.token, expiresAt: result.expiresAt });
+      } catch (error) {
         // If disk storage fails, revoke the newly created session where possible.
         await createClient(apiUrl, { apiUrl, token: result.token, expiresAt: result.expiresAt })('/auth/logout', 'POST', {}).catch(() => {});
         if (error instanceof CliError) throw error;
@@ -43,8 +46,11 @@ export function registerAuthCommands(program: Command, context: CommandContext, 
     .action(async () => {
       const { credentials, request } = await context(false);
       if (credentials) {
-        try { await request('/auth/logout', 'POST', {}); }
-        catch (error) { if (!(error instanceof CliError) || error.code !== 'UNAUTHENTICATED') throw error; }
+        try {
+          await request('/auth/logout', 'POST', {});
+        } catch (error) {
+          if (!(error instanceof CliError) || error.code !== 'UNAUTHENTICATED') throw error;
+        }
         await clearCredentials();
       }
       print({ message: 'Logged out.' }, 'Logged out.');

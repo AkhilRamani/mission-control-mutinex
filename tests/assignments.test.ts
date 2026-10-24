@@ -5,13 +5,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { serve } from '@hono/node-server';
 import { createApp } from '../src/api/app.js';
 import { assignments, crew, missionEvents, missions, positions, users } from '../src/db/schema.js';
 import { seedPassword, tenantIds } from '../src/db/fixtures.js';
 import { useTestDatabase } from './database.js';
 import { createApiClient } from './api-client.js';
-import { createCliRunner } from './cli-runner.js';
+import { createCliRunner, serveCliApp } from './cli-runner.js';
 
 const { runtime, waitForLocks } = useTestDatabase();
 const tenantId = tenantIds.atlas;
@@ -379,11 +378,8 @@ describe('matching and consent', () => {
 it('completes matching and consent using the real CLI, including stale and partial-match recovery', async () => {
   const m = await create();
   const directory = await mkdtemp(join(tmpdir(), 'mc-consent-'));
-  const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 });
-  if (!server.listening) await new Promise<void>((resolve) => server.once('listening', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Expected TCP server');
-  const run = createCliRunner(directory, `http://127.0.0.1:${address.port}`);
+  const server = await serveCliApp(app);
+  const run = createCliRunner(directory, server.url);
   async function cli(args: string[], input = '') {
     const result = await run(args, input);
     expect(result.code, result.stderr).toBe(0);
@@ -422,8 +418,7 @@ it('completes matching and consent using the real CLI, including stale and parti
     expect(JSON.parse(refused.stderr).error.code).toBe('INCOMPLETE_MATCH');
     expect((await cli(['missions', 'show', ...target])).version).toBe(mission.version);
   } finally {
-    if ('closeAllConnections' in server) server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await server.close();
     await rm(directory, { recursive: true, force: true });
   }
 }, 30000);

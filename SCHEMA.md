@@ -1,6 +1,6 @@
 # Database schema
 
-Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Fully implemented; step 7 adds fixtures and delivery checks without schema changes.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
+Current storage reference. Definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). [DESIGN](DESIGN.md) defines product rules; record actual departures in [DESIGN-DEVIATIONS](DESIGN-DEVIATIONS.md).
 
 ## Conventions
 
@@ -30,7 +30,7 @@ erDiagram
     users ||--o{ mission_events : acts
 ```
 
-## Implemented: steps 1–2
+## Identity and crew
 
 Table columns below extend the common columns.
 
@@ -46,15 +46,15 @@ Table columns below extend the common columns.
 
 `role`: `director`, `lead`, `crew`. Any role may have a crew profile. `active` affects staffing eligibility only.
 
-## Mission tables: steps 3–4 implemented
+## Missions
 
-| Table / introduction | Columns | Essential constraints |
+| Table | Columns | Essential constraints |
 | --- | --- | --- |
-| `missions` / step 3 | `owner_id uuid`, `title text`, `brief text`, `start timestamptz`, `end timestamptz`, `state mission_state = 'draft'`, `version integer = 1`, `created_at timestamptz = clock_timestamp()` | `UQ(tenant_id,id)`; version ≥ 1; trimmed title length 1–120, brief ≤ 4000; positive interval; owner is creator. |
-| `positions` / step 3 | `mission_id uuid`, `ordinal integer`, `label text`, `removed_at timestamptz?` | `UQ(tenant_id,mission_id,id)`; `UQ(tenant_id,mission_id,ordinal)`; ordinal ≥ 1; trimmed label length 1–120. |
-| `position_skills` / step 3 | `mission_id uuid`, `position_id uuid`, `skill_id uuid`, `min_proficiency integer` | `PRIMARY KEY(tenant_id,mission_id,position_id,skill_id)`; minimum proficiency 1–5; all requirements must be met. |
-| `assignments` / step 4 | `mission_id uuid`, `position_id uuid`, `crew_id uuid`, `state assignment_state = 'proposed'`, `responded_at timestamptz?`, `booked_start timestamptz?`, `booked_end timestamptz?` | One row per proposal attempt; booking constraints below. |
-| `mission_events` / step 3, extended in steps 4–6 | `mission_id uuid`, `mission_version integer`, `actor_id uuid`, `kind text`, `occurred_at timestamptz = clock_timestamp()`, `payload jsonb` | `UQ(tenant_id,mission_id,mission_version)`; version ≥ 1; `jsonb_typeof(payload) = 'object'`. Append-only. |
+| `missions` | `owner_id uuid`, `title text`, `brief text`, `start timestamptz`, `end timestamptz`, `state mission_state = 'draft'`, `version integer = 1`, `created_at timestamptz = clock_timestamp()` | `UQ(tenant_id,id)`; version ≥ 1; trimmed title length 1–120, brief ≤ 4000; positive interval; owner is creator. |
+| `positions` | `mission_id uuid`, `ordinal integer`, `label text`, `removed_at timestamptz?` | `UQ(tenant_id,mission_id,id)`; `UQ(tenant_id,mission_id,ordinal)`; ordinal ≥ 1; trimmed label length 1–120. |
+| `position_skills` | `mission_id uuid`, `position_id uuid`, `skill_id uuid`, `min_proficiency integer` | `PRIMARY KEY(tenant_id,mission_id,position_id,skill_id)`; minimum proficiency 1–5; all requirements must be met. |
+| `assignments` | `mission_id uuid`, `position_id uuid`, `crew_id uuid`, `state assignment_state = 'proposed'`, `responded_at timestamptz?`, `booked_start timestamptz?`, `booked_end timestamptz?` | One row per proposal attempt; booking constraints below. |
+| `mission_events` | `mission_id uuid`, `mission_version integer`, `actor_id uuid`, `kind text`, `occurred_at timestamptz = clock_timestamp()`, `payload jsonb` | `UQ(tenant_id,mission_id,mission_version)`; version ≥ 1; `jsonb_typeof(payload) = 'object'`. Append-only. |
 
 - `mission_state`: `draft`, `submitted`, `approved`, `completed`, `cancelled`. Approved phase is derived (`scheduled`, `active`, `awaiting_completion`), never stored; other states have no phase. Rejection returns to draft.
 - `assignment_state`: `proposed`, `accepted`, `declined`, `confirmed`, `withdrawn`, `released`.
@@ -79,7 +79,7 @@ Under the mission lock, allocate `coalesce(max(ordinal),0) + 1`, including remov
 
 Assignments/requirements reach missions through positions; no duplicate mission FK is needed. Referenced skills cannot be deleted; event snapshots preserve historical names/requirements.
 
-## Assignment constraints: step 4
+## Assignment constraints
 
 Partial unique indexes, both WHERE state IN (`proposed`,`accepted`,`confirmed`):
 
@@ -109,9 +109,9 @@ Adjacent bookings are valid. Completion retains bookings; cancellation releases 
 
 One event per actual mutation, at its resulting mission version, in the same transaction. Creation uses version 1; bulk changes share one event; no-ops create none. Order by mission version. Current state stays in relational rows; no event replay.
 
-`kind` has a fixed domain/database CHECK allowlist, introduced by step: `mission_created`, `mission_updated`, `position_added`, `position_updated`, `position_removed`, `proposals_updated`, `assignment_responded`, `mission_submitted`, `mission_withdrawn`, `mission_rejected`, `mission_approved`, `mission_completed`, `mission_cancelled`.
+`kind` has a fixed domain/database CHECK allowlist: `mission_created`, `mission_updated`, `position_added`, `position_updated`, `position_removed`, `proposals_updated`, `assignment_responded`, `mission_submitted`, `mission_withdrawn`, `mission_rejected`, `mission_approved`, `mission_completed`, `mission_cancelled`.
 
-Domain-validated payloads retain changed values/reasons and relevant proposal/consent snapshots: title, brief, times, position label, skill IDs/names/levels, assignment/crew IDs and response changes. `payload.assignmentChanges` records before/after attempt snapshots with the offered plan and position; Crew history filters and allowlists only their own changes before pagination. Material edits preserve before/after values and invalidated acceptances; releases preserve former booking intervals.
+Domain-validated payloads retain changed values/reasons and relevant proposal/consent snapshots: title, brief, times, position label, skill IDs/names/levels, assignment/crew IDs and response changes. `payload.assignmentChanges` records before/after attempt snapshots with the offered plan and position; Crew history selects events containing their own changes before pagination, then projects only those changes through an allowlist. Material edits preserve before/after values and invalidated acceptances; releases preserve former booking intervals.
 
 Snapshot IDs are historical values, not FKs or access grants. Build payloads from scoped rows under the mission lock. Crew receives only its own assignment/relevant plan projection, never raw event JSON. Runtime grants: SELECT/INSERT only; revoke UPDATE/DELETE.
 
@@ -121,4 +121,4 @@ Implemented beyond PK/unique/exclusion indexes: `sessions(tenant_id,user_id)`, `
 
 Existing unique prefixes cover tenant listings, position order and mission history. Substring search scans tenant rows initially.
 
-Permissions, transitions, independent approval, full eligibility and consent invalidation remain domain checks under DESIGN.md's locks. Crew edits recheck future/active approved commitments under the same crew locks as approval, without locking missions. Migration tests cover composite FKs, row checks, current-assignment uniqueness, booking overlap/adjacency and append-only events; workflow/race tests follow the implementation plan.
+Permissions, transitions, independent approval, full eligibility and consent invalidation remain domain checks under DESIGN.md's locks. Crew edits recheck future/active approved commitments under the same crew locks as approval, without locking missions.

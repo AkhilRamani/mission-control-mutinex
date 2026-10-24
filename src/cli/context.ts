@@ -13,5 +13,6 @@ export function createContext(api: () => string | undefined) {
 
 export type CommandContext = ReturnType<typeof createContext>;
 export type Print = (value: unknown, human: string) => void;
+
 // API dates travel as ISO strings, including dates nested in mission/assignment views.
 export type Json<T> = T extends Date ? string : T extends object ? { [K in keyof T]: Json<T[K]> } : T;

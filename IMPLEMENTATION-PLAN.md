@@ -1,5 +1,7 @@
 # Implementation plan
 
+All seven steps are implemented. Retained as the build sequence and acceptance checklist; use [README](README.md) to run and verify the application.
+
 Follow [DESIGN.md](DESIGN.md) for product rules, permissions, storage constraints, and concurrency. Use [SCHEMA.md](SCHEMA.md) for table definitions, relationships and database constraints. This file defines build order, not new behaviour. Record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
 
 Complete each step through database → domain operation → API → CLI → focused tests. Add migrations and fixtures as needed, not the entire application upfront. Steps 1–2 cover identity/crew, 3–4 planning/consent, 5–6 approval/operation, and 7 delivery.
@@ -77,8 +79,6 @@ API paths below use `/v1`; braces list separate action endpoints. `/health` is u
 **Pass:** clock-driven phase changes require no job. Early completion fails; completion at/after end succeeds. Cancellation releases capacity and updates workload; replacement needs new consent/approval. Test late cancellation, terminal/repeated commands, cancellation/profile races, and preserved history.
 
 ## 7. Deliver a reproducible application
-
-**Implemented:** [CLI walkthrough](WALKTHROUGH.md), relative-date demo fixtures and end-to-end delivery tests. Fresh isolated setup, typecheck, build and all 114 tests pass; compiled API/CLI checks preserve sessions/history across API and PostgreSQL restarts. No additional product rules or schema changes.
 
 **Build:** finish representative Atlas/Boreal seeds, README setup, role credentials, successful CLI walkthrough, and failure/recovery examples. Supply scripts from DESIGN.md; separate migration/runtime/test credentials and guard seed/reset/test targets. Do not add new product features here.
 

@@ -1,4 +1,5 @@
 import { and, eq, ilike, or } from 'drizzle-orm';
+
 import type { Database, Transaction } from '../db/client.js';
 import { availability, crew, crewSkills, skills, users } from '../db/schema.js';
 import { requireDirector } from './auth.js';
@@ -19,6 +20,7 @@ function visibleCrew(user: Identity, id?: string) {
   return and(eq(crew.tenantId, user.tenantId), user.role === 'crew' ? eq(crew.userId, user.id) : undefined,
     id === 'me' ? eq(crew.userId, user.id) : id ? eq(crew.id, id) : undefined);
 }
+
 export async function findCrew(db: Database | Transaction, user: Identity, id: string, lock = false) {
   const query = db.select(crewFields).from(crew)
     .innerJoin(users, and(eq(users.tenantId, crew.tenantId), eq(users.id, crew.userId))).where(visibleCrew(user, id));
@@ -26,6 +28,7 @@ export async function findCrew(db: Database | Transaction, user: Identity, id: s
   if (!profile) throw notFound();
   return profile;
 }
+
 function requireOwner(user: Identity, profile: { userId: string }) {
   if (profile.userId !== user.id) throw forbidden();
 }
@@ -41,6 +44,7 @@ export async function listCrew(db: Database, user: Identity, input: PageInput) {
 
 export async function getCrew(db: Database | Transaction, user: Identity, id: string) {
   const profile = await findCrew(db, user, id);
+
   const levels = await db.select({ ...skillFields, proficiency: crewSkills.proficiency }).from(crewSkills)
     .innerJoin(skills, and(eq(skills.tenantId, crewSkills.tenantId), eq(skills.id, crewSkills.skillId)))
     .where(and(eq(crewSkills.tenantId, user.tenantId), eq(crewSkills.crewId, profile.id))).orderBy(skills.name, skills.id);
@@ -52,6 +56,7 @@ export async function createCrew(db: Database, user: Identity, userId: string) {
   const [member] = await db.select({ id: users.id }).from(users)
     .where(and(eq(users.tenantId, user.tenantId), eq(users.id, userId)));
   if (!member) throw notFound();
+
   const [profile] = await db.insert(crew).values({ tenantId: user.tenantId, userId }).returning({ id: crew.id });
   return getCrew(db, user, profile!.id);
 }
@@ -64,16 +69,19 @@ export async function updateCrew(db: Database, user: Identity, id: string,
       requireOwner(user, profile);
       if (input.active !== undefined) throw forbidden();
     }
+
     if (input.biography !== undefined || input.active !== undefined) {
       await tx.update(crew).set({ ...(input.biography !== undefined ? { biography: input.biography } : {}),
         ...(input.active !== undefined ? { active: input.active } : {}) })
         .where(and(eq(crew.tenantId, user.tenantId), eq(crew.id, profile.id)));
     }
+
     // Display name has one source of truth on the account.
     if (input.displayName !== undefined) {
       await tx.update(users).set({ displayName: input.displayName })
         .where(and(eq(users.tenantId, user.tenantId), eq(users.id, profile.userId)));
     }
+
     if (input.active === false) await checkConfirmedWork(tx, user, profile.id);
     return getCrew(tx, user, id);
   });
@@ -84,6 +92,7 @@ export async function setCrewSkill(db: Database, user: Identity, id: string, ski
     const profile = await findCrew(tx, user, id, true);
     await findSkill(tx, user, skillId);
     requireOwner(user, profile);
+
     await tx.insert(crewSkills).values({ tenantId: user.tenantId, crewId: profile.id, skillId, proficiency })
       .onConflictDoUpdate({ target: [crewSkills.tenantId, crewSkills.crewId, crewSkills.skillId], set: { proficiency } });
     await checkConfirmedWork(tx, user, profile.id);
@@ -98,6 +107,7 @@ export async function removeCrewSkill(db: Database, user: Identity, id: string, 
     const [level] = await tx.select({ skillId: crewSkills.skillId }).from(crewSkills).where(where);
     if (!level) throw notFound();
     requireOwner(user, profile);
+
     await tx.delete(crewSkills).where(where);
     await checkConfirmedWork(tx, user, profile.id);
   });
@@ -115,6 +125,7 @@ export async function addAvailability(db: Database, user: Identity, id: string, 
   return db.transaction(async (tx) => {
     const profile = await findCrew(tx, user, id, true);
     requireOwner(user, profile);
+
     const [window] = await tx.insert(availability).values({ ...input, tenantId: user.tenantId, crewId: profile.id })
       .returning(availabilityFields);
     return window!;
@@ -128,6 +139,7 @@ export async function removeAvailability(db: Database, user: Identity, id: strin
     const [window] = await tx.select({ id: availability.id }).from(availability).where(where);
     if (!window) throw notFound();
     requireOwner(user, profile);
+
     await tx.delete(availability).where(where);
     await checkConfirmedWork(tx, user, profile.id);
   });

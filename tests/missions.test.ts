@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { serve } from '@hono/node-server';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +9,7 @@ import { createApp } from '../src/api/app.js';
 import { missionEvents, missions, positions, positionSkills, skills } from '../src/db/schema.js';
 import { seedPassword, tenantIds } from '../src/db/fixtures.js';
 import { useTestDatabase } from './database.js';
-import { createCliRunner } from './cli-runner.js';
+import { createCliRunner, serveCliApp } from './cli-runner.js';
 import { createApiClient } from './api-client.js';
 
 const { runtime, waitForLocks } = useTestDatabase();
@@ -223,11 +222,8 @@ describe('draft mission planning', () => {
 
 it('plans and revises a mission through the real CLI, with discoverable IDs and stale-write recovery', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mc-planning-'));
-  const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 });
-  if (!server.listening) await new Promise<void>((resolve) => server.once('listening', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Expected TCP server');
-  const run = createCliRunner(directory, `http://127.0.0.1:${address.port}`);
+  const server = await serveCliApp(app);
+  const run = createCliRunner(directory, server.url);
   async function cli(args: string[], input = '') {
     const result = await run(args, input);
     expect(result.code, result.stderr).toBe(0);
@@ -264,8 +260,7 @@ it('plans and revises a mission through the real CLI, with discoverable IDs and 
     const hidden = await run(['missions', 'show', ...missionArgs]);
     expect(hidden.code).toBe(1); expect(JSON.parse(hidden.stderr).error.code).toBe('NOT_FOUND');
   } finally {
-    if ('closeAllConnections' in server) server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await server.close();
     await rm(directory, { recursive: true, force: true });
   }
 }, 30000);

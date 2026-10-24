@@ -12,7 +12,11 @@ export function port(): number {
 
 export function assertLocalDatabase(url: string, database: string): void {
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new Error('Invalid database URL.'); }
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid database URL.');
+  }
   if (!['postgres:', 'postgresql:'].includes(parsed.protocol)
     || !['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname)
     || parsed.pathname !== `/${database}` || parsed.search || parsed.hash) {

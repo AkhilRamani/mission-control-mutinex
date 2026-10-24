@@ -1,4 +1,5 @@
 export type RankedCandidate = { crewId: string; workloadHours: number };
+
 export type CrewCandidate = RankedCandidate & {
   displayName: string;
   active: boolean;
@@ -44,14 +45,17 @@ export function eligibility(candidate: CrewCandidate, position: { requirements: 
   const requirements = position.requirements.map((requirement) => ({
     ...requirement, actualProficiency: candidate.levels.get(requirement.skillId) ?? 0,
   }));
+
   const reasons: string[] = [];
   if (!candidate.active) reasons.push('Crew profile is inactive.');
   if (!candidate.availabilityCovered) reasons.push('Availability does not cover the full mission interval.');
   if (candidate.bookingConflict) reasons.push('A confirmed booking overlaps this mission.');
+
   for (const requirement of requirements) {
     if (requirement.actualProficiency < requirement.minProficiency) {
       reasons.push(`${requirement.name} requires ${requirement.minProficiency}; declared proficiency is ${requirement.actualProficiency}.`);
     }
   }
+
   return { reasons, requirements };
 }

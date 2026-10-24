@@ -6,7 +6,11 @@ const apiError = z.object({ error: z.object({ message: z.string(), code: z.strin
 
 export function apiOrigin(value: string): string {
   let url: URL;
-  try { url = new URL(value); } catch { throw new CliError('Invalid API URL.'); }
+  try {
+    url = new URL(value);
+  } catch {
+    throw new CliError('Invalid API URL.');
+  }
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))
     || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
@@ -34,8 +38,11 @@ export function createClient(apiUrl: string, credentials?: Credentials) {
     } catch {
       throw new CliError('Could not reach the API.', 'NETWORK_ERROR', recovery);
     }
+
     let result;
-    try { result = await response.json(); } catch {
+    try {
+      result = await response.json();
+    } catch {
       throw new CliError('API returned an invalid response.', 'INVALID_RESPONSE', recovery);
     }
     if (!response.ok) {
@@ -44,6 +51,7 @@ export function createClient(apiUrl: string, credentials?: Credentials) {
       const { error } = parsed.data;
       throw new CliError(error.message, error.code, error.recovery, error.requestId);
     }
+
     return result as T;
   };
 }

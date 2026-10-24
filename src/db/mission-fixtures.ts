@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+
 import type { Transaction } from './client.js';
 import { assignments, availability, crew, crewSkills, missionEvents, missions, positions, positionSkills, users } from './schema.js';
 import { hashPassword } from '../domain/password.js';
@@ -7,8 +8,10 @@ import type { Assignment, Position } from '../domain/missions/shared.js';
 import type { AssignmentSnapshot, MissionEvent } from '../domain/missions/changes.js';
 
 const day = 86_400_000;
+
 // Stable resource IDs; times are relative to the UTC date supplied to seedDatabase.
 const id = (org: 1 | 2, group: number, n: number) => `${org}0000000-0000-4000-800${group}-${String(n).padStart(12, '0')}`;
+
 type Outcome = 'draft' | 'submitted' | 'approved' | 'completed' | 'cancelled' | 'rejected';
 type DemoMission = {
   org: 1 | 2; number: number; title: string; days: number; outcome: Outcome;
@@ -20,6 +23,7 @@ export async function seedMissions(tx: Transaction, now: Date, password: string)
   anchor.setUTCHours(0, 0, 0, 0);
   const window = { start: new Date(+anchor - 7 * day), end: new Date(+anchor + 35 * day) };
   await tx.update(availability).set(window);
+
   // Jules is available but underqualified; Lee is qualified but has no availability.
   for (const [n, username, displayName, level] of [[6, 'jules', 'Jules', 1], [7, 'lee', 'Lee', 4]] as const) {
     await tx.insert(users).values({ id: id(1, 1, n), tenantId: id(1, 0, 1), username, displayName,
@@ -28,6 +32,7 @@ export async function seedMissions(tx: Transaction, now: Date, password: string)
     await tx.insert(crewSkills).values({ tenantId: id(1, 0, 1), crewId: id(1, 3, n), skillId: id(1, 2, 1), proficiency: level });
     if (username === 'jules') await tx.insert(availability).values({ id: id(1, 4, n), tenantId: id(1, 0, 1), crewId: id(1, 3, n), ...window });
   }
+
   const examples: DemoMission[] = [
     { org: 1, number: 1, title: 'Supply flight', days: 4, outcome: 'draft', crew: [] },
     { org: 1, number: 2, title: 'Awaiting review', days: 2, outcome: 'submitted' },
@@ -55,6 +60,7 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
   const start = new Date(+anchor + spec.days * day + startHour * 3_600_000);
   const end = new Date(+anchor + spec.days * day + endHour * 3_600_000);
   let eventTime = Math.min(+anchor, +start) - day;
+
   const [row] = await tx.insert(missions).values({ id: id(spec.org, 5, spec.number), tenantId, ownerId,
     title: spec.title, brief: 'Seeded demonstration. Review the plan and history before making changes.', start, end,
     createdAt: new Date(eventTime) }).returning();
@@ -62,14 +68,17 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
   let version = 0;
   const slots: Position[] = [];
   let roster: Assignment[] = [];
+
   async function event(kind: MissionEvent['kind'], payload: Record<string, unknown>, actorId = ownerId) {
     await tx.insert(missionEvents).values({ id: id(spec.org, 8, spec.number * 100 + ++version),
       tenantId, missionId: mission.id, missionVersion: version, actorId, kind, payload, occurredAt: new Date(eventTime++) });
   }
+
   const snapshots = () => roster.map((a) => assignmentSnapshot(mission, slots.find((p) => p.id === a.positionId)!, a));
   const changes = (before: AssignmentSnapshot[]) => ({ assignmentChanges: snapshots().map((after) => ({
     before: before.find((a) => a.id === after.id) ?? null, after,
   })) });
+
   await event('mission_created', { plan: planSnapshot(mission) });
   const labels = spec.org === 2 ? ['Field pilot'] : spec.pilotOnly ? ['Pilot'] : ['Pilot', spec.expert ? 'Expert medic' : 'Medic'];
   for (const [i, label] of labels.entries()) {
@@ -84,7 +93,9 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
     slots.push({ id: slot!.id, ordinal: slot!.ordinal, label, removedAt: null, requirements });
     await event('position_added', { position: positionSnapshot(slots.at(-1)!) });
   }
+
   const crewNumbers = spec.crew ?? (spec.org === 1 ? [5, 4] : [3]);
+
   for (const [i, slot] of slots.entries()) {
     const crewNumber = crewNumbers[i];
     if (!crewNumber) continue;
@@ -92,7 +103,9 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
       tenantId, missionId: mission.id, positionId: slot.id, crewId: id(spec.org, 3, crewNumber) }).returning();
     roster.push(attempt!);
   }
+
   if (roster.length) await event('proposals_updated', changes([]));
+
   for (const [i, slot] of slots.entries()) {
     const response = spec.responses?.[i] ?? (spec.outcome === 'draft' ? null : 'accepted');
     const attempt = roster.find((a) => a.positionId === slot.id);
@@ -105,10 +118,12 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
     await event('assignment_responded', { action: response === 'accepted' ? 'accept' : 'decline',
       assignmentChanges: changes(before).assignmentChanges.filter((c) => c.after.id === attempt.id) }, id(spec.org, 1, crewNumbers[i]!));
   }
+
   if (spec.outcome !== 'draft') {
     mission.state = 'submitted';
     await event('mission_submitted', changes(snapshots()));
   }
+
   if (['approved', 'completed', 'cancelled'].includes(spec.outcome)) {
     const before = snapshots();
     roster = await tx.update(assignments).set({ state: 'confirmed', bookedStart: start, bookedEnd: end })
@@ -116,6 +131,7 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
     mission.state = 'approved';
     await event('mission_approved', changes(before), id(spec.org, 1, 1));
   }
+
   if (spec.outcome === 'rejected' || spec.outcome === 'cancelled') {
     const before = snapshots(), cancelled = spec.outcome === 'cancelled';
     roster = await tx.update(assignments).set(cancelled ? { state: 'released', bookedStart: null, bookedEnd: null }
@@ -126,10 +142,12 @@ async function seedMission(tx: Transaction, anchor: Date, spec: DemoMission) {
       reason: cancelled ? 'Survey aborted; recorded after its scheduled end.' : 'Revise the plan and obtain fresh consent.', ...changes(before),
     }, id(spec.org, 1, 1));
   }
+
   if (spec.outcome === 'completed') {
     mission.state = 'completed';
     eventTime = +end + 60_000;
     await event('mission_completed', changes(snapshots()));
   }
+
   await tx.update(missions).set({ state: mission.state, version }).where(eq(missions.id, mission.id));
 }

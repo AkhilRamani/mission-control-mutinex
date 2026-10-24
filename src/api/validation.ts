@@ -1,15 +1,19 @@
 import { z } from 'zod';
 import type { Context } from 'hono';
+
 import { AppError } from '../domain/errors.js';
 
 export const instant = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 export const username = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 export const newPassword = z.string().min(12).max(128);
 export const displayName = z.string().trim().min(1).max(120);
+
 export const uuid = z.uuid().toLowerCase();
 export const proficiency = z.number().int().min(1).max(5);
+
 export const version = z.number().int().min(1).max(2147483647);
 export const versionInput = z.strictObject({ version });
+
 const pagination = {
   limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(100)).default(25),
   offset: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(0).max(2147483647)).default(0),
@@ -21,10 +25,14 @@ export async function readJson<T>(c: Context, schema: z.ZodType<T>): Promise<T> 
   if (c.req.header('content-type')?.split(';')[0]?.trim() !== 'application/json') {
     throw new AppError(400, 'INVALID_INPUT', 'Expected application/json.', 'Send a JSON request body.');
   }
+
   let body: unknown;
-  try { body = await c.req.json(); } catch {
+  try {
+    body = await c.req.json();
+  } catch {
     throw new AppError(400, 'INVALID_INPUT', 'Invalid JSON.', 'Correct the request body.');
   }
+
   return parseInput(schema, body);
 }
 

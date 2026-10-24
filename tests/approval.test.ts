@@ -5,13 +5,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { serve } from '@hono/node-server';
 import { createApp } from '../src/api/app.js';
 import { assignments, availability, missionEvents, missions } from '../src/db/schema.js';
 import { seedPassword, tenantIds } from '../src/db/fixtures.js';
 import { useTestDatabase } from './database.js';
 import { createApiClient } from './api-client.js';
-import { createCliRunner } from './cli-runner.js';
+import { createCliRunner, serveCliApp } from './cli-runner.js';
 
 const { runtime, waitForLocks } = useTestDatabase();
 const alex = '10000000-0000-4000-8003-000000000004', sam = '10000000-0000-4000-8003-000000000005';
@@ -339,11 +338,8 @@ describe('approval concurrency', () => {
 it('submits, withdraws, rejects and approves through the real CLI with explicit stale-version recovery', async () => {
   let m = await acceptAll((await create()).id);
   const directory = await mkdtemp(join(tmpdir(), 'mc-approval-'));
-  const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 });
-  if (!server.listening) await new Promise<void>((resolve) => server.once('listening', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Expected TCP server');
-  const run = createCliRunner(directory, `http://127.0.0.1:${address.port}`);
+  const server = await serveCliApp(app);
+  const run = createCliRunner(directory, server.url);
   async function cli(args: string[], input = '') {
     const result = await run(args, input);
     expect(result.code, result.stderr).toBe(0);
@@ -374,8 +370,7 @@ it('submits, withdraws, rejects and approves through the real CLI with explicit 
     expect(m.state).toBe('approved');
     expect((await cli(['missions', 'history', '--mission', m.id])).items.at(-1).kind).toBe('mission_approved');
   } finally {
-    if ('closeAllConnections' in server) server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await server.close();
     await rm(directory, { recursive: true, force: true });
   }
 }, 30000);

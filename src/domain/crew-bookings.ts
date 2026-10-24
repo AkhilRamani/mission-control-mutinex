@@ -1,4 +1,5 @@
 import { and, eq, gt, sql } from 'drizzle-orm';
+
 import type { Transaction } from '../db/client.js';
 import { assignments, availability, crew, crewSkills, positionSkills } from '../db/schema.js';
 import type { Identity } from './auth.js';
@@ -21,8 +22,10 @@ export async function checkConfirmedWork(tx: Transaction, user: Identity, crewId
     .where(and(eq(assignments.tenantId, user.tenantId), eq(assignments.crewId, crewId), eq(assignments.state, 'confirmed'),
       gt(assignments.bookedEnd, sql`clock_timestamp()`)));
   if (!bookings.length) return;
+
   const windows = await tx.select({ start: availability.start, end: availability.end }).from(availability)
     .where(and(eq(availability.tenantId, user.tenantId), eq(availability.crewId, crewId)));
+
   const invalid = bookings.some((b) => !b.active || (b.proficiency ?? 0) < (b.required ?? 0)
     || !coversInterval(windows, { start: b.start!, end: b.end! }));
   if (invalid) throw new AppError(409, 'CONFIRMED_WORK', 'This change would invalidate future or active confirmed work.',

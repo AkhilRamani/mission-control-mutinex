@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+
 import type { CommandContext, Print } from './context.js';
 import { CliError } from './errors.js';
 import { confirmAction, parseVersion } from './input.js';
@@ -6,6 +7,7 @@ import { missionDetails } from './mission-output.js';
 import type { Mission } from './mission-output.js';
 
 export function registerMissionActions(missions: Command, context: CommandContext, print: Print) {
+
   missions.command('submit').description('Freeze a fully accepted, eligible roster for independent approval')
     .requiredOption('--mission <id>', 'draft mission ID')
     .requiredOption('--version <number>', 'mission version you reviewed', parseVersion).action(async (opts) => {
@@ -13,6 +15,7 @@ export function registerMissionActions(missions: Command, context: CommandContex
       const result = await request<Mission>(`/missions/${encodeURIComponent(opts.mission)}/submit`, 'POST', { version: opts.version });
       print(result, missionDetails(result));
     });
+
   missions.command('approve').description('Independent Director: recheck and reserve the entire roster atomically')
     .requiredOption('--mission <id>', 'submitted mission ID')
     .option('--version <number>', 'reviewed mission version; otherwise review and confirm interactively', parseVersion).action(async (opts) => {
@@ -30,6 +33,7 @@ export function registerMissionActions(missions: Command, context: CommandContex
       const result = await request<Mission>(`${path}/approve`, 'POST', { version });
       print(result, missionDetails(result));
     });
+
   for (const action of ['withdraw', 'reject'] as const) {
     missions.command(action).description(`${action === 'reject' ? 'Independent Director' : 'Owner/Director'}: return to draft and reset all consent`)
       .requiredOption('--mission <id>', 'submitted mission ID')
@@ -42,6 +46,7 @@ export function registerMissionActions(missions: Command, context: CommandContex
         print(result, missionDetails(result));
       });
   }
+
   for (const action of ['cancel', 'complete'] as const) {
     const command = missions.command(action).description(action === 'cancel'
       ? 'Owner/Director: cancel and release the whole booking, including elapsed hours'

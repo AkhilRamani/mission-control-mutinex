@@ -1,4 +1,5 @@
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+
 import { requiredEnv } from '../config.js';
 import { connectDatabase } from './client.js';
 

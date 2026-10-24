@@ -2,6 +2,7 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 
 // ~32 MiB per verification. Parameters travel with the hash; passwords never persist.
 const N = 32768, r = 8, p = 3;
+
 function derive(password: string, salt: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     scrypt(password, salt, 64, { N, r, p, maxmem: 64 * 1024 * 1024 }, (error, key) => {

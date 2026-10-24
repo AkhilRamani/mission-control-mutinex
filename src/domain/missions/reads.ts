@@ -1,4 +1,5 @@
 import { and, eq, ilike, or, sql } from 'drizzle-orm';
+
 import type { Database } from '../../db/client.js';
 import { missionEvents, missions } from '../../db/schema.js';
 import type { Identity } from '../auth.js';
@@ -13,6 +14,7 @@ export async function getMission(db: Database, user: Identity, id: string) {
   return db.transaction(async (tx) => readMissionView(tx, user, await findMission(tx, user, id)),
     { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }
+
 export async function listMissions(db: Database, user: Identity, input: PageInput & { state?: Mission['state'] | undefined }) {
   const pattern = input.q ? searchPattern(input.q) : undefined;
   const rows = await db.select(missionFields).from(missions).where(and(visibleMission(db, user),
@@ -33,16 +35,19 @@ function ownSnapshot(s: AssignmentSnapshot) {
           skillId: r.skillId, name: r.name, minProficiency: r.minProficiency,
         })) } } };
 }
+
 export async function missionHistory(db: Database, user: Identity, id: string, input: PageInput) {
   return db.transaction(async (tx) => {
     const mission = await findMission(tx, user, id);
     const profile = user.role === 'crew' ? await findCrew(tx, user, 'me') : undefined;
+
     const rows = await tx.select({ id: missionEvents.id, missionVersion: missionEvents.missionVersion,
       actorId: missionEvents.actorId, kind: missionEvents.kind, occurredAt: missionEvents.occurredAt, payload: missionEvents.payload,
     }).from(missionEvents).where(and(eq(missionEvents.tenantId, user.tenantId), eq(missionEvents.missionId, id),
       profile ? sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${missionEvents.payload}->'assignmentChanges') AS change
         WHERE change->'after'->>'crewId' = ${profile.id})` : undefined,
     )).orderBy(missionEvents.missionVersion).limit(input.limit + 1).offset(input.offset);
+
     const items = rows.map((event) => {
       if (!profile) return event;
       const changes = (event.payload.assignmentChanges as AssignmentChange[]).filter((c) => c.after.crewId === profile.id);
@@ -51,6 +56,7 @@ export async function missionHistory(db: Database, user: Identity, id: string, i
           before: c.before?.crewId === profile.id ? ownSnapshot(c.before) : null, after: ownSnapshot(c.after),
         })) } };
     });
+
     return { missionId: id, version: mission.version, ...page(items, input) };
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }

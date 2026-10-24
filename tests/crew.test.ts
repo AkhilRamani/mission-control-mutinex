@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { serve } from '@hono/node-server';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +11,7 @@ import { availability, crew, crewSkills, skills, users } from '../src/db/schema.
 import { seedPassword, tenantIds } from '../src/db/fixtures.js';
 import { login } from '../src/domain/auth.js';
 import { useTestDatabase } from './database.js';
-import { createCliRunner } from './cli-runner.js';
+import { createCliRunner, serveCliApp } from './cli-runner.js';
 import { createApiClient } from './api-client.js';
 
 const { runtime, runtimeUrl } = useTestDatabase();
@@ -284,11 +283,8 @@ describe('skills, availability and database constraints', () => {
 
 it('completes the Director → Crew → Lead workflow through the real CLI', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'mission-control-crew-cli-'));
-  const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 });
-  await new Promise<void>((resolveReady) => server.listening ? resolveReady() : server.once('listening', resolveReady));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Expected TCP address');
-  const runCli = createCliRunner(configDir, `http://127.0.0.1:${address.port}`);
+  const server = await serveCliApp(app);
+  const runCli = createCliRunner(configDir, server.url);
   async function cli(args: string[], input = '', expectedCode = 0) {
     const result = await runCli(args, input);
     expect(result.code, result.stderr).toBe(expectedCode);
@@ -332,7 +328,7 @@ it('completes the Director → Crew → Lead workflow through the real CLI', asy
     const [persisted] = await runtime.db.select({ username: users.username }).from(users).where(eq(users.id, member.id));
     expect(persisted?.username).toBe('cli-crew');
   } finally {
-    await new Promise<void>((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
+    await server.close();
     await rm(configDir, { recursive: true, force: true });
   }
 }, 30000);

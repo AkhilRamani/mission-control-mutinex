@@ -1,10 +1,12 @@
 # Mission Control
 
-TypeScript API and CLI for tenant-isolated mission planning. **Implemented: all seven steps**, from authentication through mission completion/cancellation. Start with the [CLI walkthrough](WALKTHROUGH.md); [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) records the build sequence. [DESIGN.md](DESIGN.md) remains the blueprint; [SCHEMA.md](SCHEMA.md) documents the database.
+Tenant-isolated mission planning with a TypeScript API and CLI. All seven implementation steps are complete; no web UI.
+
+[CLI walkthrough](WALKTHROUGH.md) · [Design blueprint](DESIGN.md) · [Schema](SCHEMA.md) · [Implementation sequence](IMPLEMENTATION-PLAN.md) · [Assumptions and deviations](DESIGN-DEVIATIONS.md)
 
 ## Run locally
 
-Requires Node 22.13+ and Docker Compose. Run from the repository root:
+Requires Node 22.13+ and Docker Compose. From the repository root:
 
 ```sh
 npm ci
@@ -15,215 +17,120 @@ npm run db:seed
 npm run dev
 ```
 
-The API listens at `http://127.0.0.1:3000`; PostgreSQL at `127.0.0.1:55432`. Set `PORT` in `.env` if needed. Data survives restarts in the Compose volume. Seeding is atomic and refuses a nonempty database. Repeated migration runs are safe. Use `docker compose stop` to stop PostgreSQL without deleting data.
+API: `http://127.0.0.1:3000` (`PORT` in `.env`); PostgreSQL: `127.0.0.1:55432`. Compose volumes survive restarts; `docker compose stop` preserves data. Seeds are atomic, require an empty database and never reset data. To upgrade, rerun migrations and restart the API; migrations are repeatable and do not insert fixtures.
 
-Compose creates separate database-owner migration roles and unprivileged runtime roles for development and tests. The API refuses superuser/role-administration credentials. For an existing local PostgreSQL 17 instance, run `docker/init.sql` once with `psql` as its administrator, then adjust the ports in `.env`. That script provisions dedicated databases/roles and is not repeatable; it does not drop existing objects. Migration credentials install the trusted `btree_gist` extension for booking overlap protection.
+Compose provisions separate owner/migration and unprivileged runtime roles for development/tests. The API rejects superuser/role-administration credentials. Migration credentials install `btree_gist` for booking exclusion. With an existing PostgreSQL 17 instance, run `docker/init.sql` once as administrator using `psql`, then adjust `.env` ports. This provisioning script is not repeatable and does not drop existing objects.
 
-**Upgrading:** run `npm run db:migrate` and restart the API. Existing data remains intact; migrations do not insert fixtures. Use the CLI below to add profiles/skills/missions. `db:seed` requires an empty database and never resets existing data.
+## Demo and CLI
 
-## Try the CLI
+All seeded passwords are **`Local-mission-123!`**, for local evaluation only:
 
-In another terminal:
-
-```sh
-npm run mc -- login --org atlas --username lead
-npm run mc -- whoami
-npm run mc -- --json whoami
-npm run mc -- logout
-npm run mc -- --help
-```
-
-Passwords are prompted privately. Every seeded account initially uses **`Local-mission-123!`**, for local evaluation only:
-
-| Organisation | Usernames and roles |
+| Organisation | Accounts |
 | --- | --- |
 | `atlas` | `director`, `director2` (Directors); `lead` (Lead); `alex`, `sam`, `jules`, `lee` (Crew) |
 | `boreal` | `director` (Director); `lead` (Lead); `alex` (Crew) |
 
-`password change` changes your password and revokes all your sessions; log in again with the new password.
-
-Use `--api <origin>` or `MC_API_URL` for another server. Subsequent commands use the saved origin unless explicitly overridden. HTTP is restricted to loopback; remote origins require HTTPS. Tokens cannot follow redirects or be sent to a different origin. Log out before switching accounts/servers.
-
-The session is stored outside the repository at `~/.config/mission-control/session.json` (directory `700`, file `600`, Unix ownership checked). `MC_CONFIG_DIR` selects another absolute directory outside the project, useful for isolated tests. Login JSON contains the user and expiry, never the bearer token. Expired/revoked credentials: run `logout`, then `login`. Logout is safe to repeat; network failures retain the file so server revocation can be retried. A lost login response can leave an unused session until its 24-hour expiry.
-
-For scripts, `login --password-stdin` reads one line from a secure pipe; `password change --password-stdin` reads current and new passwords on two lines. Never put secrets in command arguments or shell history. `--json` writes results to stdout and errors to stderr; failures exit nonzero. For clean JSON through npm, use `npm run --silent mc -- --json whoami`. Writes are never automatically retried.
-
-## Configure crew through the CLI
-
-Commands print discoverable IDs. Replace `<member-id>`, `<skill-id>` and `<crew-id>` below with the IDs shown by create/list commands. Use future ISO timestamps with a UTC offset, for example `2027-01-10T09:00:00Z`; choose dates appropriate to your current clock. Start logged out:
-
 ```sh
-npm run mc -- login --org atlas --username director
-npm run mc -- org show
-npm run mc -- org update --name 'Atlas Operations'
-npm run mc -- members create --username jamie --name Jamie --role crew
-# Enter an initial password privately, then share it with the person outside this app.
-npm run mc -- members list --search jamie
-npm run mc -- crew create --member <member-id>
-npm run mc -- skills list
-# Only if piloting is absent (an upgraded step 1 database):
-npm run mc -- skills add --name piloting
-npm run mc -- logout
-
-npm run mc -- login --org atlas --username jamie
-npm run mc -- crew update --crew me --bio 'Available for flight missions'
-npm run mc -- crew skills set --crew me --skill <skill-id> --level 3
-npm run mc -- availability add --crew me --start <future-start> --end <future-end>
-npm run mc -- crew show --crew me
-npm run mc -- availability list --crew me
-npm run mc -- logout
-
 npm run mc -- login --org atlas --username lead
-npm run mc -- crew list --search jamie
-npm run mc -- crew show --crew <crew-id>
-npm run mc -- availability list --crew <crew-id>
+npm run mc -- whoami
+npm run --silent mc -- --json whoami
 npm run mc -- logout
+npm run mc -- --help
 ```
 
-Directors manage accounts, catalogue names and crew name/biography/active status. Any role can have a crew profile. All roles can edit their own name/biography, but **only the owner can declare skills and availability**. Leads can read all tenant crew; Crew Members can list/show only themselves. Member lists are Director-only; the skill catalogue is visible to all tenant members. Deactivating a crew profile affects staffing eligibility, not login access.
+Follow the [walkthrough](WALKTHROUGH.md) for planning → matching → consent → approval → completion/cancellation and failure recovery. Create/list/show commands supply IDs and versions; no database knowledge is needed. Use `<command> --help` for options.
 
-Other commands: `skills rename/remove --skill <id>`, `crew skills remove --skill <id>`, `availability remove --window <id>`, `crew update --active false`. Run each with `--help` for required options. Destructive commands prompt; scripts must explicitly supply `--yes`. Skill renames must preserve meaning; referenced skills cannot be deleted. Proficiency levels are 1 beginner, 2 basic, 3 independent, 4 advanced, 5 expert.
+Seeds have five Atlas and two Boreal crew profiles, different catalogues and overlapping names. Alex has both skills; Sam is pilot-only, Jules underqualified, Lee unavailable, and Leads have profiles. Fourteen missions cover every state, partial/declined consent, rejection, conflicts and adjacent bookings. Stable IDs use the seed day’s UTC midnight as their date anchor; availability spans −7 through +35 days, end exclusive. [Seed examples](WALKTHROUGH.md#seed-examples) age with real time; `Active patrol` is active only on seed day. Qualifications are self-declared.
 
-Lists accept `--limit` (25 by default, maximum 100), `--offset`, and `--search` on members/crew/skills. Human output supplies the next offset; JSON is `{items, nextOffset}`. Search is a literal, case-insensitive substring. Availability requires offset-bearing ISO timestamps and positive `[start,end)` intervals; responses use UTC. Overlapping/adjacent windows jointly provide coverage. Removing a window removes only that record, provided confirmed work remains covered.
+**Sessions and scripts:**
 
-Fresh seeds contain five Atlas crew profiles and two Boreal profiles, different catalogues and overlapping names. Alex is flexible, Sam is pilot-only, Jules is underqualified, Lee is unavailable, and Leads also have crew profiles. Availability spans **seed UTC midnight − 7 days through +35 days (exclusive)**. Fourteen missions cover every state, partial/declined consent, rejection, booking conflicts and adjacent bookings. See [seed examples](WALKTHROUGH.md#seed-examples). IDs are stable; seed dates follow the UTC day printed by `db:seed`. These are local examples, not verified qualifications.
+- Passwords use hidden prompts. `login --password-stdin` reads one line from a secure pipe; `password change --password-stdin` reads current/new passwords on two lines. Never put secrets in arguments/history. Password changes revoke all your sessions; log in again.
+- `--api <origin>` or `MC_API_URL` overrides the saved origin. HTTP is loopback-only; remote origins require HTTPS. Tokens cannot follow redirects or cross origins. Log out before switching accounts/servers.
+- Credentials live at `~/.config/mission-control/session.json`, outside the repository, with Unix ownership checks and directory/file modes `700`/`600`. `MC_CONFIG_DIR` selects another absolute directory outside the project. Login JSON exposes user/expiry, never the token.
+- Expired/revoked session: logout/login. Logout is repeatable; network failure retains credentials for revocation retry. A lost login response may leave an unused session until its 24-hour expiry.
+- `--json` sends results to stdout, errors to stderr; failures exit nonzero. Use `npm run --silent mc --` for clean JSON. Destructive actions require confirmation (`--yes` for scripts). Writes never retry automatically; inspect lists/history after uncertain results.
 
-## Plan a mission through the CLI
+## Commands and permissions
 
-Log in as `atlas/lead`. Choose future timestamps inside your crew’s availability. Use IDs and the current version printed by each response:
+Prefix commands with `npm run mc --`. Replace IDs/versions with reviewed output; timestamps require an offset, such as `2027-01-10T09:00:00Z`, and mission starts must be future.
 
-```sh
-npm run mc -- missions create --title 'Supply flight' --brief 'Deliver supplies' --start <future-start> --end <future-end>
-npm run mc -- missions list --search supply --state draft
-npm run mc -- missions show --mission <mission-id>
-npm run mc -- positions add --mission <mission-id> --version 1 --label Pilot --requires piloting:3
-npm run mc -- positions add --mission <mission-id> --version 2 --label Medic --requires medical:3
-npm run mc -- missions update --mission <mission-id> --version 3 --brief 'Deliver medical supplies'
-npm run mc -- positions update --mission <mission-id> --position <position-id> --version 4 --requires medical:4
-npm run mc -- missions history --mission <mission-id>
-# Optional: remove a position, retaining its history.
-npm run mc -- positions remove --mission <mission-id> --position <position-id> --version 5 --yes
-```
-
-Directors can edit any tenant draft; Leads only their own. Other Leads can read it; Crew sees only missions with their current or past assignments, with their own positions and filtered history. Creation sets the immutable owner. Each position takes one person and may require several skills: `--requires piloting:3 medical:2` (exact names or UUIDs). Updates replace the requirement set; `--clear-requirements` empties it. Empty plans/requirements are allowed while drafting. Removed positions stay visible and their ordinals are never reused.
-
-Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited.
-
-## Match crew and obtain consent
-
-Use a future draft with Pilot (`piloting:3`) and Medic (`medical:3`) positions. Atlas seeds match Sam to Pilot and Alex to Medic. Read IDs and the current mission version from command output:
-
-```sh
-# As atlas/lead:
-npm run mc -- missions match --mission <mission-id>
-npm run mc -- missions propose --mission <mission-id> --version <reviewed-version> --suggested
-# Or replace the roster with explicit pairs, including a partial roster:
-npm run mc -- missions propose --mission <mission-id> --version <reviewed-version> --pairs <pilot-position-id>=<sam-crew-id> <medic-position-id>=<alex-crew-id>
-npm run mc -- logout
-
-npm run mc -- login --org atlas --username alex
-npm run mc -- assignments list --mine
-npm run mc -- assignments show --assignment <assignment-id>
-npm run mc -- assignments accept --assignment <assignment-id>
-# Interactive acceptance displays and confirms the exact plan; scripts supply its --version.
-npm run mc -- crew history --crew me
-npm run mc -- missions history --mission <mission-id>
-```
-
-Repeat review/accept as Sam. Each response changes the mission version, so obtain the latest version before the next scripted response. `assignments decline/retract --assignment <id> --version <version>` declines a proposal or retracts acceptance back to proposed. Declined/withdrawn attempts are terminal; proposing again creates a new attempt. Owner/Director `assignments remove --assignment <id> --version <version> --yes` withdraws one proposal. All attempts remain in history.
-
-Matching reads the full tenant pool under one consistent snapshot. Eligibility requires an active profile, every skill threshold, full availability and no confirmed overlap. Augmenting paths guarantee the largest roster, including a full roster whenever feasible; they can move a flexible person to cover a scarce skill. Output explains proficiency, exclusions, competing needs, coverage, snapshot/version and workload. Candidate order prefers fewer confirmed hours in the proposed start month (UTC, clipped to month boundaries), then crew UUID. Completed confirmed work counts; tentative/released work does not. This is a heuristic, without a capacity cap or global fairness guarantee.
-
-Matching does not change proposals or pin existing choices. `--suggested` applies only a complete match and checks the supplied mission version. Manual proposals replace the entire current roster: omitted positions are withdrawn, unchanged pairs retain consent, and swaps are atomic. The API also accepts an empty roster. A changed profile or booking can invalidate a suggestion before it is applied; review `INELIGIBLE_CREW` and rematch.
-
-Acceptance is personal consent, with no reservation; tentative overlaps are allowed. Title/brief/time edits reset all acceptances; position label/requirement edits reset only that position; removing/replacing a position withdraws its attempt. History retains the prior plan and responses. Crew can read only their own assignments, relevant event projections and assigned positions, including past attempts.
-
-## Submit and approve safely
-
-After every position is accepted, log in as the owner or a Director:
-
-```sh
-npm run mc -- missions show --mission <mission-id>
-npm run mc -- missions submit --mission <mission-id> --version <reviewed-version>
-npm run mc -- logout
-npm run mc -- login --org atlas --username director
-npm run mc -- missions approve --mission <mission-id>
-# Interactive approval displays the exact plan/roster and asks for confirmation.
-# Scripts review missions show, then provide --version <reviewed-version>.
-```
-
-Submission requires at least one active position, a complete accepted roster, current eligibility and a future start. It freezes the plan and consent without reserving time. Only a Director other than the immutable creator may approve or reject it.
-
-Owner/Director `missions withdraw` or independent Director `missions reject` returns it to draft and resets consent. Both require `--mission`, `--version`, `--reason` (1–2000 trimmed characters) and confirmation (`--yes` for scripts). Reasons are planner-only; Crew sees its own consent history. Obtain fresh acceptance before resubmitting.
-
-Approval rechecks eligibility and books the entire roster atomically with its version/history. Failure leaves it submitted. On `CREW_CONFLICT` or `INELIGIBLE_CREW`, withdraw, resolve eligibility or rematch, obtain consent and resubmit. On `STALE_VERSION`, review the current plan before retrying.
-
-Profile changes cannot invalidate future/active approved work (`CONFIRMED_WORK`). Skill reductions that still meet requirements and removal of redundant availability remain allowed. Ended or completed work does not restrict profiles.
-
-## Operate and close missions
-
-Approved missions become active automatically: `phase` is `scheduled` before start, `active` during `[start,end)`, then `awaiting_completion`. Other states have `phase: null`. Mission and assignment reads derive this from server time; no job, activation command, version increment or activation event is needed.
-
-```sh
-npm run mc -- missions show --mission <mission-id>
-# Owner/Director, at or after the scheduled end:
-npm run mc -- missions complete --mission <mission-id> --version <reviewed-version> --yes
-# Or cancel a draft, submitted or approved plan, even after its end:
-npm run mc -- missions cancel --mission <mission-id> --version <reviewed-version> --reason 'Flight aborted' --yes
-npm run mc -- missions history --mission <mission-id>
-```
-
-Both actions require confirmation (`--yes` for scripts). `MISSION_NOT_ENDED` means wait until the end or cancel if the mission was aborted. Completion retains confirmed bookings and their workload; cancellation withdraws tentative assignments, releases confirmed bookings and removes the whole booking from workload, including elapsed hours. History preserves prior consent and booking intervals; cancellation reasons remain planner-only.
-
-Completed/cancelled plans are final. Approved plans cannot be edited: cancel, create a replacement, then obtain fresh consent and independent approval. On stale or uncertain results, inspect show/history before retrying; commands never refresh the reviewed version automatically.
-
-## API
-
-JSON under `/v1`; authenticated requests use `Authorization: Bearer <token>`. Only the login response returns a raw token. All responses disable caching.
-
-| Method and path | Request / result |
+| Commands | Purpose / key options |
 | --- | --- |
-| `GET /health` | Process/database readiness, 200 or 503; no authentication |
-| `POST /v1/auth/login` | `{organisation, username, password}` → `{token, expiresAt, user}` |
-| `GET /v1/me` | `{user}` from the session, including organisation and fixed role |
-| `POST /v1/auth/logout` | `{}` → deletes current session |
-| `PUT /v1/me/password` | `{oldPassword, newPassword}` → changes password, revokes all own sessions |
-| `GET/PATCH /v1/organisation` | Organisation fields; PATCH `{name}` (Director) |
-| `GET/POST /v1/members` | Paginated accounts; POST `{username, displayName, role, password}` (Director) |
-| `GET/POST /v1/crew` | Paginated visible profiles; POST `{userId}` (Director) |
-| `GET/PATCH /v1/crew/:id` | Profile with skills; PATCH `{displayName?, biography?, active?}` (at least one) |
-| `GET/POST /v1/skills` | Paginated catalogue; POST `{name}` (Director) |
-| `PATCH/DELETE /v1/skills/:id` | Rename with `{name}` / remove unreferenced skill (Director) |
-| `PUT/DELETE /v1/crew/:id/skills/:skillId` | Set `{proficiency}` / remove own skill |
-| `GET/POST /v1/crew/:id/availability` | Paginated windows; POST `{start, end}` for own profile |
-| `DELETE /v1/crew/:id/availability/:availabilityId` | Remove own window, with parent/child validation |
-| `GET/POST /v1/missions` | Paginated visible plans; POST `{title, brief?, start, end}` |
-| `GET/PATCH /v1/missions/:id` | Plan with version/positions; PATCH `{version, title?, brief?, start?, end?}` |
-| `GET /v1/missions/:id/history` | `{missionId, version, items, nextOffset}`; events ordered by mission version |
-| `POST /v1/missions/:id/positions` | `{version, label, requirements?: [{skillId, minProficiency}]}` |
-| `PATCH /v1/missions/:id/positions/:positionId` | `{version, label?, requirements?}`; replaces supplied requirements |
-| `DELETE /v1/missions/:id/positions/:positionId` | JSON body `{version}`; soft-remove |
-| `GET /v1/missions/:id/match` | Snapshot, mission version, explained roster, exclusions and unfilled positions |
-| `PUT /v1/missions/:id/proposals` | `{version, proposals: [{positionId, crewId}]}`; replace current roster |
-| `DELETE /v1/missions/:id/proposals/:assignmentId` | `{version}`; withdraw one current proposal |
-| `GET /v1/assignments` | Paginated visible attempts; `mine=true` restricts any role to its own |
-| `GET /v1/assignments/:id` | Own or planner-visible attempt, plan, position and mission version |
-| `POST /v1/assignments/:id/{accept,decline,retract}` | `{version}`; owner response, updated assignment/version |
-| `GET /v1/crew/:id/history` | Paginated retained attempts, own Crew or tenant planner visibility |
-| `POST /v1/missions/:id/{submit,approve}` | `{version}`; freeze accepted roster / independently confirm all bookings |
-| `POST /v1/missions/:id/{withdraw,reject}` | `{version, reason}`; return to draft and reset consent |
-| `POST /v1/missions/:id/cancel` | `{version, reason}`; withdraw tentative assignments / release bookings; final |
-| `POST /v1/missions/:id/complete` | `{version}`; approved and at/after end; keep bookings; final |
+| `login`, `logout`, `whoami`, `password change` | Authentication and own password |
+| `org show/update` | Read settings; Director changes `--name` |
+| `members list/create` | Director provisioning: `--username`, `--name`, `--role`; password prompted privately |
+| `crew create/list/show/update/history` | Create with `--member <id>`; profile operations accept `--crew <id\|me>`; update `--name`, `--bio`, `--active true\|false` |
+| `skills list/add/rename/remove` | Catalogue; mutations use `--name` and/or `--skill <id>` |
+| `crew skills set/remove` | Own `--crew`, `--skill`; set `--level 1–5` |
+| `availability list/add/remove` | `--crew`; add `--start/--end`; remove `--window <id>` |
+| `missions create/list/show/update/history` | Create `--title`, optional `--brief`, `--start/--end`; target `--mission`; list `--state` |
+| `positions add/update/remove` | `--mission`, `--version`, `--position` for existing positions; `--label`, `--requires piloting:3 medical:2` |
+| `missions match/propose` | `--mission`; propose `--version` with `--suggested` or `--pairs <position-id>=<crew-id> ...` |
+| `assignments list/show/accept/decline/retract/remove` | List `--mine`; actions `--assignment`; mutations use reviewed `--version` |
+| `missions submit/withdraw/approve/reject/cancel/complete` | `--mission`, reviewed `--version`; withdraw/reject/cancel require `--reason` |
 
-Crew `:id` accepts a UUID or `me`. Lists use `limit`/`offset`; members/crew/skills/missions accept literal substring `q`. Mission search covers title/brief and accepts a `state` filter. Creation returns 201. Mission/position/proposal writes return the updated mission with visible positions and assignment attempts; other deletes return `{message}`. PATCH requires at least one editable field. Names/biographies are trimmed; skill names are lowercase. Display/organisation names, mission titles and position labels are 1–120 characters; skill names 1–80; biographies at most 2000 and briefs 4000. Usernames are 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. Account roles and organisation slugs are immutable.
+To provision crew: Director creates a member and optional crew profile, sharing the initial password outside the app. That person declares skills/availability, then a Lead discovers them. Any role may have a profile. Directors manage accounts/catalogue/profile metadata and active status; only profile owners declare skills/availability. Leads read tenant crew; Crew Members see only themselves. Member lists are Director-only; everyone can read the tenant catalogue. Deactivation affects staffing, not login.
 
-Tenant/user identity comes only from the session. Login names are trimmed/lowercased; passwords are not. New passwords require 12–128 characters. Unknown fields are rejected. Error responses contain `{error: {code, message, recovery, requestId}}`; request IDs also appear in headers and structured logs. Logs contain route/status/timing/actor/tenant, never request bodies, passwords, tokens or SQL.
+Skill renames must preserve meaning; referenced skills cannot be deleted. Proficiency: 1 beginner, 2 basic, 3 independent, 4 advanced, 5 expert. Availability uses positive `[start,end)` intervals, returned in UTC; overlapping/adjacent windows combine for coverage. Removing a window removes that record only and must preserve confirmed-work coverage.
 
-Errors: 400 correct input; 401 check credentials/login again; 403 use an authorised account; 404 list visible resources and check IDs (missing/foreign/private records are indistinguishable); 409 refresh the mission/assignments before retrying; 422 correct the identified eligibility problem or rematch; 429 wait; 500 use the request ID; 503 check database readiness. Login and password changes share one process-wide budget of 10 attempts per minute. This simple limit suits the loopback-only service; local users share the budget and restarting the process resets it. JSON bodies are limited to 16 KiB.
+Lists accept `--limit` (default 25, max 100), `--offset`, and `--search` for members/crew/skills/missions. Search is a literal case-insensitive substring. JSON lists return `{items, nextOffset}`; human output supplies the next offset. Offset pages can shift during concurrent edits.
 
-Passwords use Node scrypt (`N=32768, r=8, p=3`, random 16-byte salt, 64-byte key, 64 MiB memory ceiling). Sessions use 32 random bytes, SHA-256 token hashes and 24-hour expiry. Login/password changes serialize on the user row; password changes recheck the session after acquiring the lock. Composite foreign keys prevent cross-tenant session references. The application scopes reads; there is no RLS.
+## Mission rules
 
-## Verify and develop
+- **Draft:** creator is immutable owner. Directors edit any tenant draft; Leads edit only their own but can read others. Crew sees only current/past assigned missions, own positions/assignments and filtered history. Each position takes one distinct person meeting every skill threshold. `--requires` accepts exact names or UUIDs and replaces the requirement set; `--clear-requirements` empties it. Empty drafts/requirements are valid. Removed positions remain visible; ordinals are never reused.
+- **Versions:** every existing mission/assignment mutation requires the reviewed mission version. Changes increment it once with an atomic event; identical valid patches/proposals are no-ops. On `STALE_VERSION`, show/history, review, then explicitly retry. Creation/timeline changes require future start. Acceptance/approval can review and confirm interactively; scripts must pass `--version`. Commands never silently refresh it.
+- **Matching:** reads the full tenant pool in one consistent snapshot. Eligibility requires active status, all skills, full availability and no confirmed overlap. Augmenting paths guarantee maximum coverage, assigning Sam→Pilot and Alex→Medic when needed. Output explains proficiency, exclusions, competing needs, coverage, snapshot/version and workload. Prefer fewer confirmed hours clipped to the proposed start month in UTC, then crew UUID. Completed work counts; tentative/released work does not. This is a heuristic, not a capacity cap or globally optimal fairness.
+- **Proposals/consent:** matching is read-only and does not pin existing choices. `--suggested` requires a complete match and its reviewed version. Manual proposals may be partial and replace the whole roster: omitted pairs withdraw, unchanged pairs retain consent, swaps are atomic. The API also accepts an empty roster. Recheck `INELIGIBLE_CREW` and rematch if profiles/bookings changed. Acceptance is personal consent without reservation; tentative overlaps are allowed. Decline is terminal; reproposal creates a new attempt. Retract returns accepted→proposed; owner/Director removal withdraws an attempt. History retains all attempts.
+- **Material edits:** title/brief/time changes reset all acceptances; position label/requirements reset only that position; removal/replacement withdraws its attempt. Events preserve prior plans/responses. Future/active confirmed commitments block invalidating profile edits (`CONFIRMED_WORK`); safe skill reductions/redundant-window removal are allowed. Ended work no longer restricts profiles.
+- **Submit/review:** requires ≥1 active position, complete accepted roster, eligibility and future start. Submission freezes plan/consent without booking. Only a Director other than the creator approves/rejects. Owner/Director withdrawal or independent rejection returns to draft and resets consent; a trimmed 1–2000-character reason and confirmation are required. Reasons are planner-only. Approval atomically rechecks eligibility and books everyone with version/history; failure leaves the plan submitted. On conflict/ineligibility, withdraw, revise/rematch, obtain fresh consent and resubmit.
+- **Operate/close:** approved phase derives from server time: `scheduled` before start, `active` during `[start,end)`, then `awaiting_completion`; other states have `phase: null`. No activation command/job/event/version change. Owner/Director completes at/after end or cancels a draft/submitted/approved plan, even late, with confirmation. `MISSION_NOT_ENDED` means wait or cancel an aborted mission. Completion retains bookings/workload; cancellation withdraws tentative assignments, releases the whole confirmed booking and removes even elapsed workload. Events retain prior consent/bookings; cancellation reasons are planner-only. Terminal plans are final; approved edits require cancellation/replacement and fresh consent/approval.
+
+## API reference
+
+JSON under `/v1` (except `/health`), with `Authorization: Bearer <token>`. Only login returns the raw token; responses disable caching. Braces below denote separate action endpoints.
+
+| Method / path | Body / result |
+| --- | --- |
+| `GET /health` | Public process/database readiness: 200 or 503 |
+| `POST /auth/login` | `{organisation, username, password}` → `{token, expiresAt, user}` |
+| `GET /me`; `POST /auth/logout`; `PUT /me/password` | Identity; logout `{}`; password `{oldPassword, newPassword}` revokes all own sessions |
+| `GET/PATCH /organisation` | Settings; PATCH `{name}` |
+| `GET/POST /members` | Members; POST `{username, displayName, role, password}` |
+| `GET/POST /crew`; `GET/PATCH /crew/:id` | POST `{userId}`; profile/skills; PATCH `{displayName?, biography?, active?}` |
+| `GET/POST /skills`; `PATCH/DELETE /skills/:id` | Create/rename `{name}`; delete unreferenced skill |
+| `PUT/DELETE /crew/:id/skills/:skillId` | PUT `{proficiency}`; remove own skill |
+| `GET/POST /crew/:id/availability`; `DELETE /crew/:id/availability/:availabilityId` | Windows; POST `{start, end}`; delete validates parent/child |
+| `GET/POST /missions`; `GET/PATCH /missions/:id` | POST `{title, brief?, start, end}`; PATCH `{version, title?, brief?, start?, end?}` |
+| `GET /missions/:id/history` | `{missionId, version, items, nextOffset}`, ordered by version |
+| `POST /missions/:id/positions` | `{version, label, requirements?: [{skillId, minProficiency}]}` |
+| `PATCH/DELETE /missions/:id/positions/:positionId` | PATCH `{version, label?, requirements?}` replaces supplied requirements; DELETE `{version}` soft-removes |
+| `GET /missions/:id/match`; `PUT /missions/:id/proposals` | Explained match; PUT `{version, proposals: [{positionId, crewId}]}` replaces roster |
+| `DELETE /missions/:id/proposals/:assignmentId` | `{version}` withdraws current proposal |
+| `GET /assignments`; `GET /assignments/:id`; `GET /crew/:id/history` | Visible attempts; `mine=true` restricts any role to own assignments; detail includes plan/position/version |
+| `POST /assignments/:id/{accept,decline,retract}` | `{version}` → assignment/version |
+| `POST /missions/:id/{submit,approve,complete}` | `{version}` |
+| `POST /missions/:id/{withdraw,reject,cancel}` | `{version, reason}` |
+
+Crew `:id` accepts UUID or `me`. Lists use `limit/offset`; searchable lists use `q`, missions also `state` (search covers title/brief). Creation returns 201. Mission/position/proposal writes return the updated visible mission/attempts; other deletes return `{message}`. PATCH requires an editable field; unknown/protected fields are rejected.
+
+Names/biographies are trimmed; skill and login names are lowercase; passwords are unchanged. Display/organisation names, mission titles and position labels: 1–120 characters; skill names: 1–80; biography: ≤2000; brief: ≤4000. Usernames: 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. New passwords: 12–128 characters. Roles and organisation slugs are immutable.
+
+## Security and errors
+
+Tenant/user come only from the session. Scoped reads and composite foreign keys enforce tenant/parent relationships; no RLS or cascading deletions. Runtime roles cannot UPDATE/DELETE mission events. Login/password changes serialize on the user row; password changes recheck the session after acquiring the lock.
+
+Passwords use scrypt (`N=32768, r=8, p=3`, random 16-byte salt, 64-byte key, 64 MiB ceiling). Sessions use 32 random bytes, SHA-256 token hashes and 24-hour expiry. Login/password changes share ten attempts/minute per process; users share the budget and restarting clears it. JSON bodies are limited to 16 KiB.
+
+Errors return `{error: {code, message, recovery, requestId}}`; IDs also appear in headers/logs. Logs include route/status/timing/actor/tenant, never bodies, passwords, tokens or SQL.
+
+| Status | Recovery |
+| --- | --- |
+| 400 / 401 / 403 | Correct input / check credentials or login / use an authorised account |
+| 404 | List visible resources; missing, foreign and private records are indistinguishable |
+| 409 / 422 | Review current mission/assignments before retrying / correct eligibility or rematch |
+| 429 / 500 / 503 | Wait / use request ID / check database readiness |
+
+## Verify and maintain
 
 ```sh
 npm run typecheck
@@ -232,19 +139,15 @@ npm test
 npm run start
 ```
 
-Stop the development server before `start` on the same port. `build` emits Node ESM into `dist`. Tests migrate and reset **only** a loopback database named `mission_control_test`; both test URLs and distinct test runtime/migration roles are required. Test/seed URLs cannot contain query parameters or fragments, preventing connection-field overrides. Tests never fall back to the development database. The suite exercises real PostgreSQL constraints, deterministic lock races, safe failure responses, and real CLI subprocesses over HTTP. `npm run test:unit` needs no database.
+Stop `dev` before `start` on the same port. Build emits Node ESM into `dist`; `test:unit` needs no database. Integration tests migrate/reset only loopback `mission_control_test`, require both test URLs with distinct runtime/migration roles, and never fall back to development. Test/seed URLs reject query parameters/fragments to prevent connection overrides. Tests cover real PostgreSQL constraints, lock races, safe errors and CLI subprocesses; integration files run serially with shared fixtures/API/CLI helpers.
 
-Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain modules separate `planning.ts` (draft edits), `matching.ts` (candidate loading and match responses), `matcher.ts` (pure eligibility and team selection), `assignments.ts` (proposals/responses), `approval.ts` (submission and booking), `lifecycle.ts` (cancel/complete), and `reads.ts` (visible mission/history views). `shared.ts` contains scoped reads and permission/version checks; `changes.ts` owns consent resets, snapshots and atomic version/event writes. `crew-bookings.ts` guards eligibility edits. Transactions stay with each public mutation.
+One package, four feature groups (auth, organisation, crew, missions):
 
-- `api/app.ts` owns shared HTTP policy and route registration. Login/health are public; every other route group mounts after authentication. Routes validate input and call domain functions.
-- `domain/` owns permissions, tenant-scoped queries and transactions. Crew changes share crew-row locks; planning changes share mission-row locks. Mission detail/history reads use a consistent snapshot. No repository or generic CRUD layer.
-- `cli/index.ts` registers commands and handles output/errors; feature files use one HTTP client and credential context. Shared mission/assignment formatting lives in `cli/mission-output.ts`, keeping command modules independent. Type-only domain imports reuse response shapes without loading database code into the CLI.
-- `db/` keeps one schema, migrations and fixtures. Tests share guarded database setup, an authenticated API test client and a real CLI subprocess runner; integration files run serially against the dedicated test database.
+- `api/`: shared HTTP policy/authentication in `app.ts`, input validation and routes calling domain functions. Only health/login are public.
+- `domain/`: permissions, scoped queries and transactions. Mission modules: `planning`, `matching` (queries/explanations), `matcher` (pure algorithm), `assignments`, `approval`, `lifecycle`, `reads`, `shared` (reads/checks), `changes` (consent/snapshots/events). `crew-bookings` guards eligibility edits. Public mutations own transactions; mission/crew locks serialize related writes; mission detail/history use consistent snapshots. No repository/generic CRUD layer.
+- `cli/`: command registration/output in `index.ts`, one HTTP client/context, shared `mission-output.ts`, and type-only domain imports for response shapes.
+- `db/`: schema, migrations, fixtures. For schema changes: `npm run db:generate`, inspect SQL, migrate. Never edit applied migrations; append events atomically with state changes.
 
-Change the schema, run `npm run db:generate`, inspect the generated SQL, then migrate. Do not edit applied migrations. Composite FKs enforce tenant/parent relationships; no cascading deletions. Mission event UPDATE/DELETE privileges are revoked from runtime roles in the migration; domain functions append events alongside changes.
+Limits: local evaluation, Unix credentials, process-local throttling, no expired-session cleanup, public onboarding/recovery, deployment or production identity integration. Profile edits use last-write-wins under locks; creation lacks idempotency, duplicate availability is allowed, repeated skill PUTs replace levels, repeated removals return 404. Provisioning sends no invitations or forced password resets. PostgreSQL major/npm dependencies are pinned. Tests inject seed dates; production uses real time. See [assumptions and deviations](DESIGN-DEVIATIONS.md) for verification boundaries.
 
-Profile limits: profile edits use last-write-wins under the crew lock; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`.
-
-Current limits: local evaluation only, one saved CLI session, Unix credential permissions, process-local rate limits, no expired-session cleanup job, no public account provisioning or recovery. PostgreSQL uses a pinned major version; npm dependencies are pinned in `package.json` and `package-lock.json`. No deployment infrastructure or production identity integration is included. Demo phases age with real time; `Active patrol` is active only on the seed UTC day. Tests inject the seed date; the production API always uses the real clock.
-
-Library references: [Hono Node adapter](https://hono.dev/docs/getting-started/nodejs), [Drizzle migrations](https://orm.drizzle.team/docs/migrations), [Node scrypt](https://nodejs.org/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback).
+References: [Hono Node](https://hono.dev/docs/getting-started/nodejs), [Drizzle migrations](https://orm.drizzle.team/docs/migrations), [Node scrypt](https://nodejs.org/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback).

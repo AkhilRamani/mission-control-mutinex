@@ -1,6 +1,6 @@
 # Mission Control
 
-TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–6, authentication through mission completion/cancellation.** Representative mission seeds and final delivery follow in step 7 of [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md). [DESIGN.md](DESIGN.md) remains the blueprint; [SCHEMA.md](SCHEMA.md) documents the database.
+TypeScript API and CLI for tenant-isolated mission planning. **Implemented: all seven steps**, from authentication through mission completion/cancellation. Start with the [CLI walkthrough](WALKTHROUGH.md); [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) records the build sequence. [DESIGN.md](DESIGN.md) remains the blueprint; [SCHEMA.md](SCHEMA.md) documents the database.
 
 ## Run locally
 
@@ -29,9 +29,6 @@ In another terminal:
 npm run mc -- login --org atlas --username lead
 npm run mc -- whoami
 npm run mc -- --json whoami
-npm run mc -- password change
-# All sessions are now revoked. Log in with the new password.
-npm run mc -- login --org atlas --username lead
 npm run mc -- logout
 npm run mc -- --help
 ```
@@ -40,8 +37,10 @@ Passwords are prompted privately. Every seeded account initially uses **`Local-m
 
 | Organisation | Usernames and roles |
 | --- | --- |
-| `atlas` | `director`, `director2` (Directors); `lead` (Lead); `alex`, `sam` (Crew) |
+| `atlas` | `director`, `director2` (Directors); `lead` (Lead); `alex`, `sam`, `jules`, `lee` (Crew) |
 | `boreal` | `director` (Director); `lead` (Lead); `alex` (Crew) |
+
+`password change` changes your password and revokes all your sessions; log in again with the new password.
 
 Use `--api <origin>` or `MC_API_URL` for another server. Subsequent commands use the saved origin unless explicitly overridden. HTTP is restricted to loopback; remote origins require HTTPS. Tokens cannot follow redirects or be sent to a different origin. Log out before switching accounts/servers.
 
@@ -51,7 +50,7 @@ For scripts, `login --password-stdin` reads one line from a secure pipe; `passwo
 
 ## Configure crew through the CLI
 
-Commands print discoverable IDs. Replace `<member-id>`, `<skill-id>` and `<crew-id>` below with the IDs shown by create/list commands. Start logged out:
+Commands print discoverable IDs. Replace `<member-id>`, `<skill-id>` and `<crew-id>` below with the IDs shown by create/list commands. Use future ISO timestamps with a UTC offset, for example `2027-01-10T09:00:00Z`; choose dates appropriate to your current clock. Start logged out:
 
 ```sh
 npm run mc -- login --org atlas --username director
@@ -69,7 +68,7 @@ npm run mc -- logout
 npm run mc -- login --org atlas --username jamie
 npm run mc -- crew update --crew me --bio 'Available for flight missions'
 npm run mc -- crew skills set --crew me --skill <skill-id> --level 3
-npm run mc -- availability add --crew me --start 2030-01-10T09:00:00Z --end 2030-01-10T17:00:00Z
+npm run mc -- availability add --crew me --start <future-start> --end <future-end>
 npm run mc -- crew show --crew me
 npm run mc -- availability list --crew me
 npm run mc -- logout
@@ -87,14 +86,14 @@ Other commands: `skills rename/remove --skill <id>`, `crew skills remove --skill
 
 Lists accept `--limit` (25 by default, maximum 100), `--offset`, and `--search` on members/crew/skills. Human output supplies the next offset; JSON is `{items, nextOffset}`. Search is a literal, case-insensitive substring. Availability requires offset-bearing ISO timestamps and positive `[start,end)` intervals; responses use UTC. Overlapping/adjacent windows jointly provide coverage. Removing a window removes only that record, provided confirmed work remains covered.
 
-Fresh seeds include Atlas/Boreal profiles for Leads and Crew, different skill catalogues, Alex with both skills, Sam with piloting only, and underqualified Leads without availability. Crew availability uses the fixed UTC interval **2030-01-01 through 2030-02-01 (exclusive)**. These are local examples, not qualifications verified by Directors.
+Fresh seeds contain five Atlas crew profiles and two Boreal profiles, different catalogues and overlapping names. Alex is flexible, Sam is pilot-only, Jules is underqualified, Lee is unavailable, and Leads also have crew profiles. Availability spans **seed UTC midnight − 7 days through +35 days (exclusive)**. Fourteen missions cover every state, partial/declined consent, rejection, booking conflicts and adjacent bookings. See [seed examples](WALKTHROUGH.md#seed-examples). IDs are stable; seed dates follow the UTC day printed by `db:seed`. These are local examples, not verified qualifications.
 
 ## Plan a mission through the CLI
 
-Log in as `atlas/lead`. Use IDs and the current version printed by each response:
+Log in as `atlas/lead`. Choose future timestamps inside your crew’s availability. Use IDs and the current version printed by each response:
 
 ```sh
-npm run mc -- missions create --title 'Supply flight' --brief 'Deliver supplies' --start 2030-01-10T09:00:00Z --end 2030-01-10T17:00:00Z
+npm run mc -- missions create --title 'Supply flight' --brief 'Deliver supplies' --start <future-start> --end <future-end>
 npm run mc -- missions list --search supply --state draft
 npm run mc -- missions show --mission <mission-id>
 npm run mc -- positions add --mission <mission-id> --version 1 --label Pilot --requires piloting:3
@@ -246,6 +245,6 @@ Change the schema, run `npm run db:generate`, inspect the generated SQL, then mi
 
 Profile limits: profile edits use last-write-wins under the crew lock; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`.
 
-Current limits: local evaluation only, one saved CLI session, Unix credential permissions, process-local rate limits, no expired-session cleanup job, no public account provisioning or recovery. PostgreSQL uses a pinned major version; npm dependencies are pinned in `package.json` and `package-lock.json`. Drizzle Kit's development-only loader currently carries an esbuild development-server advisory; this project does not run its server or Studio. Runtime dependencies have no reported audit findings at implementation time. No deployment infrastructure or production identity integration is included.
+Current limits: local evaluation only, one saved CLI session, Unix credential permissions, process-local rate limits, no expired-session cleanup job, no public account provisioning or recovery. PostgreSQL uses a pinned major version; npm dependencies are pinned in `package.json` and `package-lock.json`. No deployment infrastructure or production identity integration is included. Demo phases age with real time; `Active patrol` is active only on the seed UTC day. Tests inject the seed date; the production API always uses the real clock.
 
 Library references: [Hono Node adapter](https://hono.dev/docs/getting-started/nodejs), [Drizzle migrations](https://orm.drizzle.team/docs/migrations), [Node scrypt](https://nodejs.org/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback).

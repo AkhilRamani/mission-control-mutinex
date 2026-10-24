@@ -16,6 +16,7 @@ export function useTestDatabase() {
   if (new URL(runtimeUrl).username === new URL(migrationUrl).username) throw new Error('Use separate test runtime/migration roles.');
   const runtime = connectDatabase(runtimeUrl), migration = connectDatabase(migrationUrl);
   const truncate = sql`TRUNCATE mission_events, assignments, position_skills, positions, missions, availability, crew_skills, crew, skills, sessions, users, organisations`;
+  const clear = () => migration.db.execute(truncate);
   async function snapshot() {
     return { organisations: await runtime.db.select().from(organisations), users: await runtime.db.select().from(users),
       crew: await runtime.db.select().from(crew), skills: await runtime.db.select().from(skills),
@@ -24,7 +25,7 @@ export function useTestDatabase() {
   let fixtures: Awaited<ReturnType<typeof snapshot>>;
   beforeAll(async () => {
     await migrate(migration.db, { migrationsFolder: './drizzle' });
-    await migration.db.execute(truncate);
+    await clear();
     await seedDatabase(runtime.db);
     fixtures = await snapshot();
   });
@@ -51,5 +52,5 @@ export function useTestDatabase() {
     }
     throw new Error(`Expected ${count} blocked requests`);
   }
-  return { runtime, runtimeUrl, waitForLocks };
+  return { runtime, runtimeUrl, waitForLocks, clear };
 }

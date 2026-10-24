@@ -6,8 +6,9 @@ const url = requiredEnv('DATABASE_URL');
 assertLocalDatabase(url, 'mission_control');
 const { db, pool } = connectDatabase(url);
 try {
-  await seedDatabase(db);
-  console.log('Seeded Atlas/Boreal accounts, crew, skills and availability. Local login details are in README.md.');
+  const now = new Date();
+  await seedDatabase(db, now);
+  console.log(`Seeded Atlas/Boreal demo data anchored to ${now.toISOString().slice(0, 10)} UTC. See README.md and WALKTHROUGH.md.`);
 } catch {
   console.error('Seed failed: requires a migrated, empty local database. Existing data was not reset.');
   process.exitCode = 1;

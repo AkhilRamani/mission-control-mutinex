@@ -78,6 +78,8 @@ API paths below use `/v1`; braces list separate action endpoints. `/health` is u
 
 ## 7. Deliver a reproducible application
 
+**Implemented:** [CLI walkthrough](WALKTHROUGH.md), relative-date demo fixtures and end-to-end delivery tests. Fresh isolated setup, typecheck, build and all 114 tests pass; compiled API/CLI checks preserve sessions/history across API and PostgreSQL restarts. No additional product rules or schema changes.
+
 **Build:** finish representative Atlas/Boreal seeds, README setup, role credentials, successful CLI walkthrough, and failure/recovery examples. Supply scripts from DESIGN.md; separate migration/runtime/test credentials and guard seed/reset/test targets. Do not add new product features here.
 
 **Pass:** from a clean checkout, install → start PostgreSQL → migrate → seed → run API/CLI. A real CLI test completes the journey plus decline/rejection/conflict recovery; restart preserves data. Run build, typecheck, unit tests and PostgreSQL integration tests. Verify every permission boundary and resource family, including lists, searches, counts, related records, events and error details. No SQL knowledge or fixture-ID lookup is needed to use the CLI.

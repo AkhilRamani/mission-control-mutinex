@@ -1,13 +1,16 @@
 import type { Database } from './client.js';
 import { availability, crew, crewSkills, organisations, skills, users } from './schema.js';
 import { hashPassword } from '../domain/password.js';
+import { seedMissions } from './mission-fixtures.js';
 
 export const seedPassword = 'Local-mission-123!';
 export const tenantIds = { atlas: '10000000-0000-4000-8000-000000000001', boreal: '20000000-0000-4000-8000-000000000001' };
 
-export async function seedDatabase(db: Database) {
+// Omit demoAt for the small, fixed fixtures used by focused integration tests.
+export async function seedDatabase(db: Database, demoAt?: Date) {
+  if (demoAt && !Number.isFinite(+demoAt)) throw new Error('Invalid seed date.');
   await db.transaction(async (tx) => {
-    // Refuse nonempty databases. No reset/truncate option is necessary for this slice.
+    // Seeding never resets existing data; the transaction also makes failed seeds harmless.
     if ((await tx.select({ id: organisations.id }).from(organisations).limit(1)).length) {
       throw new Error('Seed refused: database already contains organisations.');
     }
@@ -41,12 +44,13 @@ export async function seedDatabase(db: Database) {
         const selectedSkills = account.username === 'alex' ? catalogue : [catalogue[account.username === 'sam' ? 0 : 1]!];
         await tx.insert(crewSkills).values(selectedSkills.map((skill) => ({ tenantId, crewId, skillId: skill.id,
           proficiency: account.role === 'lead' ? 1 : 4 })));
-        // Fixed UTC anchor makes the initial profiles reproducible; mission seeds arrive in step 7.
+        // Focused tests retain the original fixed availability; demo seeds replace it below.
         if (account.role === 'crew') await tx.insert(availability).values({
           id: `${prefix}0000000-0000-4000-8004-${String(i + 1).padStart(12, '0')}`, tenantId, crewId,
           start: new Date('2030-01-01T00:00:00Z'), end: new Date('2030-02-01T00:00:00Z'),
         });
       }
     }
+    if (demoAt) await seedMissions(tx, demoAt, seedPassword);
   });
 }

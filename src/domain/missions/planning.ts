@@ -43,7 +43,7 @@ export async function updateMission(db: Database, user: Identity, id: string, ve
 
     return finishChange(tx, user, mission, {
       kind: 'mission_updated', payload: { before: planSnapshot(mission), after: planSnapshot(next) },
-    }, { plan: next, assignments: consent });
+    }, { patch: next, assignments: consent });
   });
 }
 

@@ -1,6 +1,6 @@
 # Database schema
 
-Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **All twelve tables implemented through step 4; approval and operation follow in steps 5–6.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
+Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Implemented through step 5; operation follows in step 6.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
 
 ## Conventions
 
@@ -121,4 +121,4 @@ Implemented beyond PK/unique/exclusion indexes: `sessions(tenant_id,user_id)`, `
 
 Existing unique prefixes cover tenant listings, position order and mission history. Substring search scans tenant rows initially.
 
-Permissions, transitions, independent approval, full eligibility and consent invalidation remain domain checks under DESIGN.md's locks. Step 5 adds confirmed-work guards to crew edits. Migration tests must cover composite FKs, row checks, current-assignment uniqueness, booking overlap/adjacency and append-only events; workflow/race tests follow the implementation plan.
+Permissions, transitions, independent approval, full eligibility and consent invalidation remain domain checks under DESIGN.md's locks. Crew edits recheck future/active approved commitments under the same crew locks as approval, without locking missions. Migration tests cover composite FKs, row checks, current-assignment uniqueness, booking overlap/adjacency and append-only events; workflow/race tests follow the implementation plan.

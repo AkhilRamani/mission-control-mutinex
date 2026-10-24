@@ -8,6 +8,7 @@ import type { Mission, MissionSummary, History, Match } from './mission-output.j
 import { CliError } from './errors.js';
 import { confirmRemoval, parseVersion } from './input.js';
 import { listOptions, listing, query } from './pagination.js';
+import { registerApprovalCommands } from './mission-approval.js';
 
 type Request = Awaited<ReturnType<CommandContext>>['request'];
 const path = (id: string) => `/missions/${encodeURIComponent(id)}`;
@@ -47,7 +48,8 @@ async function requirements(request: Request, values: string[]) {
 }
 
 export function registerMissionCommands(program: Command, context: CommandContext, print: Print) {
-  const missions = program.command('missions').description('Plan draft missions; edit using the version you reviewed');
+  const missions = program.command('missions').description('Plan, staff and approve missions using the version you reviewed');
+  registerApprovalCommands(missions, context, print);
   listOptions(missions.command('list')).addOption(new Option('--state <state>', 'filter mission state')
     .choices(['draft', 'submitted', 'approved', 'completed', 'cancelled'])).action(async (opts) => {
     const { request } = await context();

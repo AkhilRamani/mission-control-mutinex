@@ -49,7 +49,7 @@ export function createApp(db: Database, options: { log?: (entry: Log) => void; n
       safe = new AppError(409, 'REFERENCE_CONFLICT', 'A related record prevents this change.', 'Refresh the records. Referenced skills cannot be deleted.');
     }
     if (!safe && code === '23P01') {
-      safe = new AppError(409, 'CREW_CONFLICT', 'A confirmed booking overlaps this mission.', 'Refresh the plan and rematch crew before trying approval again.');
+      safe = new AppError(409, 'CREW_CONFLICT', 'A confirmed booking overlaps this mission.', 'Withdraw submitted plans before revising or rematching, then obtain fresh consent and approval.');
     }
     if (!safe && ['40P01', '55P03', '57014'].includes(String(code))) {
       safe = new AppError(409, 'RETRYABLE_CONFLICT', 'The operation could not obtain a database lock in time.', 'Check the current state, then retry.');

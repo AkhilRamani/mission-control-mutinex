@@ -7,6 +7,7 @@ import { page, searchPattern } from './pagination.js';
 import type { PageInput } from './pagination.js';
 import { findSkill } from './organisation.js';
 import { forbidden, notFound } from './errors.js';
+import { checkConfirmedWork } from './crew-bookings.js';
 
 const crewFields = { id: crew.id, userId: crew.userId, username: users.username, displayName: users.displayName,
   role: users.role, biography: crew.biography, active: crew.active };
@@ -73,6 +74,7 @@ export async function updateCrew(db: Database, user: Identity, id: string,
       await tx.update(users).set({ displayName: input.displayName })
         .where(and(eq(users.tenantId, user.tenantId), eq(users.id, profile.userId)));
     }
+    if (input.active === false) await checkConfirmedWork(tx, user, profile.id);
     return getCrew(tx, user, id);
   });
 }
@@ -84,6 +86,7 @@ export async function setCrewSkill(db: Database, user: Identity, id: string, ski
     owner(user, profile);
     await tx.insert(crewSkills).values({ tenantId: user.tenantId, crewId: profile.id, skillId, proficiency })
       .onConflictDoUpdate({ target: [crewSkills.tenantId, crewSkills.crewId, crewSkills.skillId], set: { proficiency } });
+    await checkConfirmedWork(tx, user, profile.id);
     return { skillId, proficiency };
   });
 }
@@ -96,6 +99,7 @@ export async function removeCrewSkill(db: Database, user: Identity, id: string, 
     if (!level) throw notFound();
     owner(user, profile);
     await tx.delete(crewSkills).where(where);
+    await checkConfirmedWork(tx, user, profile.id);
   });
 }
 
@@ -125,5 +129,6 @@ export async function removeAvailability(db: Database, user: Identity, id: strin
     if (!window) throw notFound();
     owner(user, profile);
     await tx.delete(availability).where(where);
+    await checkConfirmedWork(tx, user, profile.id);
   });
 }

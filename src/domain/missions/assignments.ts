@@ -6,15 +6,13 @@ import { findCrew } from '../crew.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { page } from '../pagination.js';
 import type { PageInput } from '../pagination.js';
-import { loadCandidates, lockCrew } from './matching.js';
-import { eligibility } from './matcher.js';
-import type { CrewCandidate } from './matcher.js';
+import { checkEligibility, loadCandidates, lockCrew } from './matching.js';
 import {
   assignmentFields, assignmentSnapshot, currentStates, whereAssignment,
   checkDraft, checkEdit, checkTimeline, checkVersion, requirePlanner,
   findMission, readAssignments, readPositions, readMissionView, finishChange, recordChange,
 } from './shared.js';
-import type { Assignment, Position } from './shared.js';
+import type { Assignment } from './shared.js';
 
 export type Proposal = { positionId: string; crewId: string };
 
@@ -125,12 +123,6 @@ function finalAssignment() {
   return new AppError(409, 'ASSIGNMENT_STATE', 'This assignment cannot make that transition.',
     'Refresh assignments and mission version. Declined or withdrawn attempts need a new proposal; submitted plans must be withdrawn first.');
 }
-function checkEligibility(candidate: CrewCandidate, position: Position) {
-  const { reasons } = eligibility(candidate, position);
-  if (reasons.length) throw new AppError(422, 'INELIGIBLE_CREW', `Position ${position.label} (${position.id}): ${reasons.join(' ')}`,
-    'Review crew skills, availability and current bookings, then rematch or revise the draft.');
-}
-
 function visibleAssignments(user: Identity, mine: boolean) {
   return and(eq(assignments.tenantId, user.tenantId), user.role === 'crew' || mine ? eq(crew.userId, user.id) : undefined);
 }

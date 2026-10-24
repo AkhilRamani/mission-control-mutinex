@@ -157,7 +157,7 @@ export const missionEvents = pgTable('mission_events', {
   check('event_version', sql`${t.missionVersion} >= 1`),
   check('event_time_finite', sql`isfinite(${t.occurredAt})`),
   check('event_payload_object', sql`jsonb_typeof(${t.payload}) = 'object'`),
-  check('event_kind', sql`${t.kind} IN ('mission_created', 'mission_updated', 'position_added', 'position_updated', 'position_removed', 'proposals_updated', 'assignment_responded')`),
+  check('event_kind', sql`${t.kind} IN ('mission_created', 'mission_updated', 'position_added', 'position_updated', 'position_removed', 'proposals_updated', 'assignment_responded', 'mission_submitted', 'mission_withdrawn', 'mission_rejected', 'mission_approved')`),
 ]);
 
 export const assignmentState = pgEnum('assignment_state', ['proposed', 'accepted', 'declined', 'confirmed', 'withdrawn', 'released']);

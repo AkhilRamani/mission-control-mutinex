@@ -118,35 +118,36 @@ type Event = (
   | { kind: 'mission_updated'; payload: { before: PlanSnapshot; after: PlanSnapshot } }
   | { kind: 'position_added'; payload: { position: PositionSnapshot } }
   | { kind: 'position_updated' | 'position_removed'; payload: { before: PositionSnapshot; after: PositionSnapshot } }
-  | { kind: 'proposals_updated'; payload: { assignmentChanges?: AssignmentChange[] } }
+  | { kind: 'proposals_updated' | 'mission_submitted' | 'mission_approved'; payload: { assignmentChanges?: AssignmentChange[] } }
   | { kind: 'assignment_responded'; payload: { action: 'accept' | 'decline' | 'retract' } }
+  | { kind: 'mission_withdrawn' | 'mission_rejected'; payload: { reason: string } }
 ) & { payload: { assignmentChanges?: AssignmentChange[] } };
-type PlanPatch = Partial<Pick<Mission, 'title' | 'brief' | 'start' | 'end'>>;
+type MissionPatch = Partial<Pick<Mission, 'title' | 'brief' | 'start' | 'end' | 'state'>>;
 
 export async function recordEvent(tx: Transaction, user: Identity, id: string, version: number, event: Event) {
   await tx.insert(missionEvents).values({ tenantId: user.tenantId, missionId: id, missionVersion: version, actorId: user.id, ...event });
 }
 // Mission lock is held by the caller. One version and event cover the whole operation.
-export async function recordChange(tx: Transaction, user: Identity, mission: Mission, event: Event, plan: PlanPatch = {}) {
-  const [updated] = await tx.update(missions).set({ ...plan, version: mission.version + 1 })
+export async function recordChange(tx: Transaction, user: Identity, mission: Mission, event: Event, patch: MissionPatch = {}) {
+  const [updated] = await tx.update(missions).set({ ...patch, version: mission.version + 1 })
     .where(whereMission(user, mission.id)).returning(missionFields);
   await recordEvent(tx, user, mission.id, updated!.version, event);
   return updated!;
 }
 
-// Draft edits and proposals return a full view. A response records its event directly.
+// Plan, roster and lifecycle changes return a full view. Consent responses record directly.
 export async function finishChange(tx: Transaction, user: Identity, mission: Mission, event: Event,
-  options: { plan?: PlanPatch; assignments?: ChangedAssignments } = {}) {
+  options: { patch?: MissionPatch; assignments?: ChangedAssignments } = {}) {
   const visiblePositions = await readPositions(tx, user, mission.id);
   const changes = options.assignments;
   if (changes?.after.length) {
-    // Position edits already happened in this transaction; merge the pending plan for after-snapshots.
+    // Position edits already happened; merge the pending mission patch for after-snapshots.
     event.payload.assignmentChanges = changes.after.map((a): AssignmentChange => ({
       before: changes.before.find((b) => b.id === a.id) ?? null,
-      after: assignmentSnapshot({ ...mission, ...options.plan }, visiblePositions.find((p) => p.id === a.positionId)!, a),
+      after: assignmentSnapshot({ ...mission, ...options.patch }, visiblePositions.find((p) => p.id === a.positionId)!, a),
     }));
   }
-  const updated = await recordChange(tx, user, mission, event, options.plan);
+  const updated = await recordChange(tx, user, mission, event, options.patch);
   return { ...missionSummary(user, updated), positions: visiblePositions, assignments: await readAssignments(tx, user, mission.id) };
 }
 // Keep proposed attempts in the event too: the plan they were offered has changed.

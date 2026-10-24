@@ -2,16 +2,15 @@ import { and, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type { Database, Transaction } from '../../db/client.js';
 import { assignments, availability, crew, crewSkills, users } from '../../db/schema.js';
 import type { Identity } from '../auth.js';
-import { forbidden, notFound } from '../errors.js';
+import { AppError, forbidden, notFound } from '../errors.js';
 import { coversInterval, utcMonth, workloadHours } from '../time.js';
 import type { Interval } from '../time.js';
 import { checkDraft, checkTimeline, findMission, readPositions } from './shared.js';
-import type { Mission } from './shared.js';
+import type { Mission, Position } from './shared.js';
 import { compareCandidates, eligibility, selectTeam } from './matcher.js';
 import type { CrewCandidate } from './matcher.js';
 
-// Proposals/consent briefly use the existing profile locks to read coherent eligibility.
-// They do not create bookings; a later profile change or approval may make them ineligible.
+// All staffing writes use the same profile locks as crew edits, in UUID order.
 export async function lockCrew(tx: Transaction, user: Identity, ids: string[]) {
   if (!ids.length) return;
   const rows = await tx.select({ id: crew.id }).from(crew).where(and(eq(crew.tenantId, user.tenantId), inArray(crew.id, ids)))
@@ -55,6 +54,11 @@ export async function loadCandidates(tx: Transaction, user: Identity, mission: M
       bookingConflict: booked.some((b) => b.start < mission.end && b.end > mission.start),
       workloadHours: workloadHours(booked, month) };
   });
+}
+export function checkEligibility(candidate: CrewCandidate, position: Position) {
+  const { reasons } = eligibility(candidate, position);
+  if (reasons.length) throw new AppError(422, 'INELIGIBLE_CREW', `Position ${position.label} (${position.id}): ${reasons.join(' ')}`,
+    'Review crew skills, availability and current bookings; withdraw submitted plans before revising or rematching.');
 }
 export async function matchCrew(db: Database, user: Identity, id: string) {
   return db.transaction(async (tx) => {

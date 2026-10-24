@@ -1,6 +1,6 @@
 # Mission Control
 
-TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–4, authentication, crew management, mission planning, matching and consent.** Next steps follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint. [SCHEMA.md](SCHEMA.md) documents implemented and planned tables.
+TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–5, authentication, crew management, planning, consent and independent approval.** Next steps follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint. [SCHEMA.md](SCHEMA.md) documents the database.
 
 ## Run locally
 
@@ -85,7 +85,7 @@ Directors manage accounts, catalogue names and crew name/biography/active status
 
 Other commands: `skills rename/remove --skill <id>`, `crew skills remove --skill <id>`, `availability remove --window <id>`, `crew update --active false`. Run each with `--help` for required options. Destructive commands prompt; scripts must explicitly supply `--yes`. Skill renames must preserve meaning; referenced skills cannot be deleted. Proficiency levels are 1 beginner, 2 basic, 3 independent, 4 advanced, 5 expert.
 
-Lists accept `--limit` (25 by default, maximum 100), `--offset`, and `--search` on members/crew/skills. Human output supplies the next offset; JSON is `{items, nextOffset}`. Search is a literal, case-insensitive substring. Availability requires offset-bearing ISO timestamps and positive `[start,end)` intervals; responses use UTC. Overlapping/adjacent windows jointly provide coverage. Removing a window removes only that record.
+Lists accept `--limit` (25 by default, maximum 100), `--offset`, and `--search` on members/crew/skills. Human output supplies the next offset; JSON is `{items, nextOffset}`. Search is a literal, case-insensitive substring. Availability requires offset-bearing ISO timestamps and positive `[start,end)` intervals; responses use UTC. Overlapping/adjacent windows jointly provide coverage. Removing a window removes only that record, provided confirmed work remains covered.
 
 Fresh seeds include Atlas/Boreal profiles for Leads and Crew, different skill catalogues, Alex with both skills, Sam with piloting only, and underqualified Leads without availability. Crew availability uses the fixed UTC interval **2030-01-01 through 2030-02-01 (exclusive)**. These are local examples, not qualifications verified by Directors.
 
@@ -108,7 +108,7 @@ npm run mc -- positions remove --mission <mission-id> --position <position-id> -
 
 Directors can edit any tenant draft; Leads only their own. Other Leads can read it; Crew sees only missions with their current or past assignments, with their own positions and filtered history. Creation sets the immutable owner. Each position takes one person and may require several skills: `--requires piloting:3 medical:2` (exact names or UUIDs). Updates replace the requirement set; `--clear-requirements` empties it. Empty plans/requirements are allowed while drafting. Removed positions stay visible and their ordinals are never reused.
 
-Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited. Approval and operation arrive in steps 5–6; representative mission seeds arrive in step 7.
+Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited. Operation follows in step 6; representative mission seeds arrive in step 7.
 
 ## Match crew and obtain consent
 
@@ -137,7 +137,29 @@ Matching reads the full tenant pool under one consistent snapshot. Eligibility r
 
 Matching does not change proposals or pin existing choices. `--suggested` applies only a complete match and checks the supplied mission version. Manual proposals replace the entire current roster: omitted positions are withdrawn, unchanged pairs retain consent, and swaps are atomic. The API also accepts an empty roster. A changed profile or booking can invalidate a suggestion before it is applied; review `INELIGIBLE_CREW` and rematch.
 
-Acceptance is personal consent, with no reservation; tentative overlaps are allowed. Title/brief/time edits reset all acceptances; position label/requirement edits reset only that position; removing/replacing a position withdraws its attempt. History retains the prior plan and responses. Crew can read only their own assignments, relevant event projections and assigned positions, including past attempts. Approval and confirmed-work profile guards arrive together in step 5; booking fixtures currently exercise eligibility and database constraints in tests.
+Acceptance is personal consent, with no reservation; tentative overlaps are allowed. Title/brief/time edits reset all acceptances; position label/requirement edits reset only that position; removing/replacing a position withdraws its attempt. History retains the prior plan and responses. Crew can read only their own assignments, relevant event projections and assigned positions, including past attempts.
+
+## Submit and approve safely
+
+After every position is accepted, log in as the owner or a Director:
+
+```sh
+npm run mc -- missions show --mission <mission-id>
+npm run mc -- missions submit --mission <mission-id> --version <reviewed-version>
+npm run mc -- logout
+npm run mc -- login --org atlas --username director
+npm run mc -- missions approve --mission <mission-id>
+# Interactive approval displays the exact plan/roster and asks for confirmation.
+# Scripts review missions show, then provide --version <reviewed-version>.
+```
+
+Submission requires at least one active position, a complete accepted roster, current eligibility and a future start. It freezes the plan and consent without reserving time. Only a Director other than the immutable creator may approve or reject it.
+
+Owner/Director `missions withdraw` or independent Director `missions reject` returns it to draft and resets consent. Both require `--mission`, `--version`, `--reason` (1–2000 trimmed characters) and confirmation (`--yes` for scripts). Reasons are planner-only; Crew sees its own consent history. Obtain fresh acceptance before resubmitting.
+
+Approval rechecks eligibility and books the entire roster atomically with its version/history. Failure leaves it submitted. On `CREW_CONFLICT` or `INELIGIBLE_CREW`, withdraw, resolve eligibility or rematch, obtain consent and resubmit. On `STALE_VERSION`, review the current plan before retrying.
+
+Profile changes cannot invalidate future/active approved work (`CONFIRMED_WORK`). Skill reductions that still meet requirements and removal of redundant availability remain allowed. Ended or completed work does not restrict profiles. Approved plans are frozen; cancellation/replacement, completion and derived active phases arrive in step 6. Until then, approved bookings cannot be released through the API/CLI.
 
 ## API
 
@@ -172,6 +194,8 @@ JSON under `/v1`; authenticated requests use `Authorization: Bearer <token>`. On
 | `GET /v1/assignments/:id` | Own or planner-visible attempt, plan, position and mission version |
 | `POST /v1/assignments/:id/{accept,decline,retract}` | `{version}`; owner response, updated assignment/version |
 | `GET /v1/crew/:id/history` | Paginated retained attempts, own Crew or tenant planner visibility |
+| `POST /v1/missions/:id/{submit,approve}` | `{version}`; freeze accepted roster / independently confirm all bookings |
+| `POST /v1/missions/:id/{withdraw,reject}` | `{version, reason}`; return to draft and reset consent |
 
 Crew `:id` accepts a UUID or `me`. Lists use `limit`/`offset`; members/crew/skills/missions accept literal substring `q`. Mission search covers title/brief and accepts a `state` filter. Creation returns 201. Mission/position/proposal writes return the updated mission with visible positions and assignment attempts; other deletes return `{message}`. PATCH requires at least one editable field. Names/biographies are trimmed; skill names are lowercase. Display/organisation names, mission titles and position labels are 1–120 characters; skill names 1–80; biographies at most 2000 and briefs 4000. Usernames are 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. Account roles and organisation slugs are immutable.
 
@@ -192,7 +216,7 @@ npm run start
 
 Stop the development server before `start` on the same port. `build` emits Node ESM into `dist`. Tests migrate and reset **only** a loopback database named `mission_control_test`; both test URLs and distinct test runtime/migration roles are required. Test/seed URLs cannot contain query parameters or fragments, preventing connection-field overrides. Tests never fall back to the development database. The suite exercises real PostgreSQL constraints, deterministic lock races, safe failure responses, and real CLI subprocesses over HTTP. `npm run test:unit` needs no database.
 
-Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain modules separate `planning.ts` (draft edits), `matching.ts` (candidate loading and match responses), `matcher.ts` (pure eligibility and team selection), `assignments.ts` (proposals/responses), and `reads.ts` (visible mission/history views). `shared.ts` contains their scoped reads, permission/version checks and atomic event handling. Transactions stay with each public mutation.
+Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain modules separate `planning.ts` (draft edits), `matching.ts` (candidate loading and match responses), `matcher.ts` (pure eligibility and team selection), `assignments.ts` (proposals/responses), `approval.ts` (submission and booking), and `reads.ts` (visible mission/history views). `shared.ts` contains scoped reads, permission/version checks and atomic event handling. `crew-bookings.ts` guards eligibility edits. Transactions stay with each public mutation.
 
 - `api/app.ts` owns shared HTTP policy and route registration. Login/health are public; every other route group mounts after authentication. Routes validate input and call domain functions.
 - `domain/` owns permissions, tenant-scoped queries and transactions. Crew changes share crew-row locks; planning changes share mission-row locks. Mission detail/history reads use a consistent snapshot. No repository or generic CRUD layer.
@@ -201,7 +225,7 @@ Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, orga
 
 Change the schema, run `npm run db:generate`, inspect the generated SQL, then migrate. Do not edit applied migrations. Composite FKs enforce tenant/parent relationships; no cascading deletions. Mission event UPDATE/DELETE privileges are revoked from runtime roles in the migration; domain functions append events alongside changes.
 
-Profile limits: profile edits use last-write-wins; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`. Confirmed-booking edit guards arrive with approval in step 5.
+Profile limits: profile edits use last-write-wins under the crew lock; offset pagination is not a snapshot across concurrent edits. Creation POSTs are not idempotent: after an uncertain response inspect lists before retrying, especially availability (duplicate windows are allowed). Repeat skill PUTs replace the level; repeat removals return 404. Account creation does not send invitations or force a password reset; the member can run `password change`.
 
 Current limits: local evaluation only, one saved CLI session, Unix credential permissions, process-local rate limits, no expired-session cleanup job, no public account provisioning or recovery. PostgreSQL uses a pinned major version; npm dependencies are pinned in `package.json` and `package-lock.json`. Drizzle Kit's development-only loader currently carries an esbuild development-server advisory; this project does not run its server or Studio. Runtime dependencies have no reported audit findings at implementation time. No deployment infrastructure or production identity integration is included.
 

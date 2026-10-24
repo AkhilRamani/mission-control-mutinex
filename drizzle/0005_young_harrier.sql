@@ -1,0 +1,2 @@
+ALTER TABLE "mission_events" DROP CONSTRAINT "event_kind";--> statement-breakpoint
+ALTER TABLE "mission_events" ADD CONSTRAINT "event_kind" CHECK ("mission_events"."kind" IN ('mission_created', 'mission_updated', 'position_added', 'position_updated', 'position_removed', 'proposals_updated', 'assignment_responded', 'mission_submitted', 'mission_withdrawn', 'mission_rejected', 'mission_approved', 'mission_cancelled', 'mission_completed'));

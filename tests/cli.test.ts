@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { readPasswords } from '../src/cli/input.js';
 import { createClient } from '../src/cli/client.js';
 import { Command } from 'commander';
-import { registerApprovalCommands } from '../src/cli/mission-approval.js';
+import { registerMissionActions } from '../src/cli/mission-actions.js';
 import { CliError } from '../src/cli/errors.js';
 import * as input from '../src/cli/input.js';
 
@@ -54,7 +54,7 @@ describe('interactive approval', () => {
     const print = vi.fn();
     try {
       const program = new Command();
-      registerApprovalCommands(program.command('missions'), async () => ({ request, apiUrl: 'http://127.0.0.1:3000', credentials: undefined }), print);
+      registerMissionActions(program.command('missions'), async () => ({ request, apiUrl: 'http://127.0.0.1:3000', credentials: undefined }), print);
       await expect(program.parseAsync(['missions', 'approve', '--mission', mission.id], { from: 'user' }))
         .rejects.toMatchObject({ code: 'STALE_VERSION' });
       expect(display).toHaveBeenCalledWith(expect.stringContaining('v7'));

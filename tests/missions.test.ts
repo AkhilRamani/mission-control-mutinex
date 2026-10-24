@@ -13,7 +13,7 @@ import { useTestDatabase } from './database.js';
 import { createCliRunner } from './cli-runner.js';
 import { createApiClient } from './api-client.js';
 
-const { runtime } = useTestDatabase();
+const { runtime, waitForLocks } = useTestDatabase();
 const pilot = '10000000-0000-4000-8002-000000000001', medical = '10000000-0000-4000-8002-000000000002';
 const foreignSkill = '20000000-0000-4000-8002-000000000001';
 const plan = { title: 'Supply flight', brief: 'Deliver supplies', start: '2030-01-10T09:00:00Z', end: '2030-01-10T17:00:00Z' };
@@ -183,13 +183,7 @@ describe('draft mission planning', () => {
       const start = new Date(Date.now() + 500).toISOString();
       pending = request('atlas/lead', path, 'PATCH', { version: 1, start });
       // Observe the blocked request, then release only after its proposed start passes.
-      let blocked = false;
-      for (let i = 0; i < 100; i++) {
-        const result = await runtime.pool.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND usename = current_user AND wait_event_type = 'Lock'");
-        if (result.rowCount) { blocked = true; break; }
-        await delay(10);
-      }
-      expect(blocked).toBe(true);
+      await waitForLocks();
       await delay(Math.max(0, Date.parse(start) - Date.now() + 50));
       await blocker.query('COMMIT');
       const response = await pending;

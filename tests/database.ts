@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { sql } from 'drizzle-orm';
+import { setTimeout as delay } from 'node:timers/promises';
 import { assertLocalDatabase, requiredEnv } from '../src/config.js';
 import { connectDatabase } from '../src/db/client.js';
 import { seedDatabase } from '../src/db/fixtures.js';
@@ -40,5 +41,15 @@ export function useTestDatabase() {
     });
   });
   afterAll(async () => { await Promise.all([runtime.pool.end(), migration.pool.end()]); });
-  return { runtime, runtimeUrl };
+  // Observe actual blocked requests. Files run serially with a dedicated runtime role.
+  async function waitForLocks(count = 1) {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const result = await runtime.pool.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND usename = current_user AND wait_event_type = 'Lock'");
+      if ((result.rowCount ?? 0) >= count) return;
+      await delay(10);
+    }
+    throw new Error(`Expected ${count} blocked requests`);
+  }
+  return { runtime, runtimeUrl, waitForLocks };
 }

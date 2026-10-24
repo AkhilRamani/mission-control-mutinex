@@ -6,6 +6,7 @@ import { findCrew } from '../crew.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { page } from '../pagination.js';
 import type { PageInput } from '../pagination.js';
+import { missionPhase } from '../time.js';
 import { checkEligibility, loadCandidates, lockCrew } from './matching.js';
 import {
   assignmentFields, assignmentSnapshot, currentStates, whereAssignment,
@@ -25,7 +26,7 @@ export async function getAssignment(db: Database, user: Identity, id: string) {
     const mission = await findMission(tx, user, assignment.missionId);
     const position = (await readPositions(tx, user, mission.id)).find((p) => p.id === assignment.positionId)!;
     return { ...assignment, version: mission.version, mission: {
-      id: mission.id, title: mission.title, brief: mission.brief, start: mission.start, end: mission.end, state: mission.state,
+      id: mission.id, title: mission.title, brief: mission.brief, start: mission.start, end: mission.end, state: mission.state, phase: missionPhase(mission),
     }, position };
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }
@@ -143,5 +144,6 @@ async function assignmentPage(db: Database | Transaction, user: Identity, input:
     .innerJoin(positions, and(eq(positions.tenantId, assignments.tenantId), eq(positions.missionId, assignments.missionId), eq(positions.id, assignments.positionId)))
     .where(and(visibleAssignments(user, mine), crewId ? eq(assignments.crewId, crewId) : undefined))
     .orderBy(missions.createdAt, missions.id, positions.ordinal, assignments.id).limit(input.limit + 1).offset(input.offset);
-  return page(rows, input);
+  const now = new Date();
+  return page(rows.map((row) => ({ ...row, phase: missionPhase({ ...row, state: row.missionState }, now) })), input);
 }

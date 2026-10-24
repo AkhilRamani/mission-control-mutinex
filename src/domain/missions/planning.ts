@@ -5,7 +5,7 @@ import type { Identity } from '../auth.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import {
   checkEdit, checkTimeline, findMission, finishChange, planSnapshot, positionSnapshot,
-  readPositions, recordEvent, wherePosition, readMissionView, resetConsent, missionFields, positionFields,
+  readPositions, recordEvent, wherePosition, readMissionView, resetConsent, missionFields, missionSummary, positionFields,
 } from './shared.js';
 
 export type RequirementInput = { skillId: string; minProficiency: number };
@@ -21,7 +21,7 @@ export async function createMission(db: Database, user: Identity, input: PlanInp
     const [mission] = await tx.insert(missions)
       .values({ ...input, tenantId: user.tenantId, ownerId: user.id }).returning(missionFields);
     await recordEvent(tx, user, mission!.id, 1, { kind: 'mission_created', payload: { plan: planSnapshot(input) } });
-    return { ...mission!, positions: [], assignments: [] };
+    return { ...missionSummary(user, mission!), positions: [], assignments: [] };
   });
 }
 

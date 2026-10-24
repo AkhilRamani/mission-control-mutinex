@@ -1,6 +1,6 @@
 # Mission Control
 
-TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–5, authentication, crew management, planning, consent and independent approval.** Next steps follow [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); [DESIGN.md](DESIGN.md) remains the blueprint. [SCHEMA.md](SCHEMA.md) documents the database.
+TypeScript API and CLI for tenant-isolated mission planning. **Implemented: steps 1–6, authentication through mission completion/cancellation.** Representative mission seeds and final delivery follow in step 7 of [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md). [DESIGN.md](DESIGN.md) remains the blueprint; [SCHEMA.md](SCHEMA.md) documents the database.
 
 ## Run locally
 
@@ -108,7 +108,7 @@ npm run mc -- positions remove --mission <mission-id> --position <position-id> -
 
 Directors can edit any tenant draft; Leads only their own. Other Leads can read it; Crew sees only missions with their current or past assignments, with their own positions and filtered history. Creation sets the immutable owner. Each position takes one person and may require several skills: `--requires piloting:3 medical:2` (exact names or UUIDs). Updates replace the requirement set; `--clear-requirements` empties it. Empty plans/requirements are allowed while drafting. Removed positions stay visible and their ordinals are never reused.
 
-Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited. Operation follows in step 6; representative mission seeds arrive in step 7.
+Every edit requires the mission version you reviewed. Changed writes increment it once with an atomic history event; identical valid patches do neither. On `STALE_VERSION`, run `missions show`, review changes, then explicitly retry with its version. After uncertain creation, inspect `missions list` or `missions history` before retrying. Creation and timeline changes require a future start; only drafts can be edited.
 
 ## Match crew and obtain consent
 
@@ -159,7 +159,24 @@ Owner/Director `missions withdraw` or independent Director `missions reject` ret
 
 Approval rechecks eligibility and books the entire roster atomically with its version/history. Failure leaves it submitted. On `CREW_CONFLICT` or `INELIGIBLE_CREW`, withdraw, resolve eligibility or rematch, obtain consent and resubmit. On `STALE_VERSION`, review the current plan before retrying.
 
-Profile changes cannot invalidate future/active approved work (`CONFIRMED_WORK`). Skill reductions that still meet requirements and removal of redundant availability remain allowed. Ended or completed work does not restrict profiles. Approved plans are frozen; cancellation/replacement, completion and derived active phases arrive in step 6. Until then, approved bookings cannot be released through the API/CLI.
+Profile changes cannot invalidate future/active approved work (`CONFIRMED_WORK`). Skill reductions that still meet requirements and removal of redundant availability remain allowed. Ended or completed work does not restrict profiles.
+
+## Operate and close missions
+
+Approved missions become active automatically: `phase` is `scheduled` before start, `active` during `[start,end)`, then `awaiting_completion`. Other states have `phase: null`. Mission and assignment reads derive this from server time; no job, activation command, version increment or activation event is needed.
+
+```sh
+npm run mc -- missions show --mission <mission-id>
+# Owner/Director, at or after the scheduled end:
+npm run mc -- missions complete --mission <mission-id> --version <reviewed-version> --yes
+# Or cancel a draft, submitted or approved plan, even after its end:
+npm run mc -- missions cancel --mission <mission-id> --version <reviewed-version> --reason 'Flight aborted' --yes
+npm run mc -- missions history --mission <mission-id>
+```
+
+Both actions require confirmation (`--yes` for scripts). `MISSION_NOT_ENDED` means wait until the end or cancel if the mission was aborted. Completion retains confirmed bookings and their workload; cancellation withdraws tentative assignments, releases confirmed bookings and removes the whole booking from workload, including elapsed hours. History preserves prior consent and booking intervals; cancellation reasons remain planner-only.
+
+Completed/cancelled plans are final. Approved plans cannot be edited: cancel, create a replacement, then obtain fresh consent and independent approval. On stale or uncertain results, inspect show/history before retrying; commands never refresh the reviewed version automatically.
 
 ## API
 
@@ -196,6 +213,8 @@ JSON under `/v1`; authenticated requests use `Authorization: Bearer <token>`. On
 | `GET /v1/crew/:id/history` | Paginated retained attempts, own Crew or tenant planner visibility |
 | `POST /v1/missions/:id/{submit,approve}` | `{version}`; freeze accepted roster / independently confirm all bookings |
 | `POST /v1/missions/:id/{withdraw,reject}` | `{version, reason}`; return to draft and reset consent |
+| `POST /v1/missions/:id/cancel` | `{version, reason}`; withdraw tentative assignments / release bookings; final |
+| `POST /v1/missions/:id/complete` | `{version}`; approved and at/after end; keep bookings; final |
 
 Crew `:id` accepts a UUID or `me`. Lists use `limit`/`offset`; members/crew/skills/missions accept literal substring `q`. Mission search covers title/brief and accepts a `state` filter. Creation returns 201. Mission/position/proposal writes return the updated mission with visible positions and assignment attempts; other deletes return `{message}`. PATCH requires at least one editable field. Names/biographies are trimmed; skill names are lowercase. Display/organisation names, mission titles and position labels are 1–120 characters; skill names 1–80; biographies at most 2000 and briefs 4000. Usernames are 1–64 lowercase letters/digits/`._-`, beginning with a letter/digit. Account roles and organisation slugs are immutable.
 
@@ -216,7 +235,7 @@ npm run start
 
 Stop the development server before `start` on the same port. `build` emits Node ESM into `dist`. Tests migrate and reset **only** a loopback database named `mission_control_test`; both test URLs and distinct test runtime/migration roles are required. Test/seed URLs cannot contain query parameters or fragments, preventing connection-field overrides. Tests never fall back to the development database. The suite exercises real PostgreSQL constraints, deterministic lock races, safe failure responses, and real CLI subprocesses over HTTP. `npm run test:unit` needs no database.
 
-Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain modules separate `planning.ts` (draft edits), `matching.ts` (candidate loading and match responses), `matcher.ts` (pure eligibility and team selection), `assignments.ts` (proposals/responses), `approval.ts` (submission and booking), and `reads.ts` (visible mission/history views). `shared.ts` contains scoped reads, permission/version checks and atomic event handling. `crew-bookings.ts` guards eligibility edits. Transactions stay with each public mutation.
+Code follows four feature groups across `api/`, `domain/` and `cli/`: auth, organisation (settings, accounts, catalogue), crew (profiles, skills, availability), and missions. Mission domain modules separate `planning.ts` (draft edits), `matching.ts` (candidate loading and match responses), `matcher.ts` (pure eligibility and team selection), `assignments.ts` (proposals/responses), `approval.ts` (submission and booking), `lifecycle.ts` (cancel/complete), and `reads.ts` (visible mission/history views). `shared.ts` contains scoped reads, permission/version checks and atomic event handling. `crew-bookings.ts` guards eligibility edits. Transactions stay with each public mutation.
 
 - `api/app.ts` owns shared HTTP policy and route registration. Login/health are public; every other route group mounts after authentication. Routes validate input and call domain functions.
 - `domain/` owns permissions, tenant-scoped queries and transactions. Crew changes share crew-row locks; planning changes share mission-row locks. Mission detail/history reads use a consistent snapshot. No repository or generic CRUD layer.

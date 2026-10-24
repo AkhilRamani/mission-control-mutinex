@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { coversInterval } from '../src/domain/time.js';
+import { coversInterval, missionPhase } from '../src/domain/time.js';
 
 const interval = (start: number, end: number) => ({ start: new Date(start), end: new Date(end) });
+it('derives approved phases at exact interval boundaries; other states have no phase', () => {
+  const mission = { ...interval(10, 20), state: 'approved' };
+  expect(missionPhase(mission, new Date(9))).toBe('scheduled');
+  expect(missionPhase(mission, new Date(10))).toBe('active');
+  expect(missionPhase(mission, new Date(19))).toBe('active');
+  expect(missionPhase(mission, new Date(20))).toBe('awaiting_completion');
+  expect(missionPhase(mission, new Date(21))).toBe('awaiting_completion');
+  for (const state of ['draft', 'submitted', 'completed', 'cancelled']) {
+    expect(missionPhase({ ...mission, state }, new Date(15))).toBeNull();
+  }
+});
+
 describe('availability union coverage [start, end)', () => {
   it('requires whole coverage, merges overlaps/adjacency, and does not mutate input', () => {
     const windows = [interval(20, 30), interval(0, 10), interval(5, 20), interval(2, 3)];

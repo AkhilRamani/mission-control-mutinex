@@ -1,5 +1,12 @@
 export type Interval = { start: Date; end: Date };
 
+// Phase is a read-time description of an approved interval, never another stored state.
+export function missionPhase(mission: Interval & { state: string }, now = new Date()) {
+  if (mission.state !== 'approved') return null;
+  if (now < mission.start) return 'scheduled';
+  return now < mission.end ? 'active' : 'awaiting_completion';
+}
+
 // Coverage uses the union of windows, including adjacency. Call with the full pool, never a display page.
 export function coversInterval(windows: Interval[], target: Interval): boolean {
   if (!(target.start < target.end)) return false;

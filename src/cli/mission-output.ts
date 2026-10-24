@@ -11,9 +11,9 @@ export type Assignment = Json<Awaited<ReturnType<typeof getAssignment>>>;
 export type AssignmentPage = Json<Awaited<ReturnType<typeof listAssignments>>>;
 export type AssignmentResponse = Json<Awaited<ReturnType<typeof respondToAssignment>>>;
 
-export const missionRow = (m: MissionSummary) => `${m.id} | v${m.version} | ${m.state} | ${m.title} | ${m.start} → ${m.end}`;
+export const missionRow = (m: MissionSummary) => `${m.id} | v${m.version} | ${m.state}${m.phase ? ` (${m.phase})` : ''} | ${m.title} | ${m.start} → ${m.end}`;
 export const assignmentRow = (a: AssignmentPage['items'][number]) =>
-  `${a.id} | ${a.state} | ${a.displayName} | ${a.title}: ${a.label} | mission ${a.missionId} v${a.version} | ${a.start} → ${a.end}`;
+  `${a.id} | ${a.state} | ${a.displayName} | ${a.title}: ${a.label} | mission ${a.missionId} v${a.version} ${a.missionState}${a.phase ? ` (${a.phase})` : ''} | ${a.start} → ${a.end}`;
 
 export function missionDetails(m: Mission) {
   const positions = m.positions.map((p) => {
@@ -24,6 +24,9 @@ export function missionDetails(m: Mission) {
   return [missionRow(m), ...(m.ownerId ? [`Owner: ${m.ownerId}`] : []), `Brief: ${m.brief || '(empty)'}`,
     'Positions:', ...(positions.length ? positions : ['(none)']),
     'Assignments:', ...(assignments.length ? assignments : ['(none)']),
+    ...(m.state === 'approved' ? ['Approved plan is frozen. Complete at/after end, or cancel and create a replacement.'] : []),
+    ...(m.state === 'completed' ? ['Completed: final; confirmed bookings remain in workload and history.'] : []),
+    ...(m.state === 'cancelled' ? ['Cancelled: final; bookings released. Create a replacement with fresh consent and approval.'] : []),
   ].join('\n');
 }
 
@@ -32,6 +35,7 @@ export function assignmentDetails(a: Assignment) {
   return [
     `${a.id} | ${a.state} | mission ${a.missionId} v${a.version}`,
     a.mission.title, a.mission.brief, `${a.mission.start} → ${a.mission.end}`,
+    `Mission: ${a.mission.state}${a.mission.phase ? ` (${a.mission.phase})` : ''}`,
     `Position: ${a.position.label}`, `Requirements: ${requirements}`, `Crew: ${a.crewId}`,
     `Response: ${a.respondedAt ?? '(none)'}`, `History: mc missions history --mission ${a.missionId}`,
   ].join('\n');

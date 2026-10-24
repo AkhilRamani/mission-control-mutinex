@@ -18,7 +18,8 @@ export async function listMissions(db: Database, user: Identity, input: PageInpu
     input.state ? eq(missions.state, input.state) : undefined,
     pattern ? or(ilike(missions.title, pattern), ilike(missions.brief, pattern)) : undefined,
   )).orderBy(missions.createdAt, missions.id).limit(input.limit + 1).offset(input.offset);
-  return page(rows.map((m) => missionSummary(user, m)), input);
+  const now = new Date();
+  return page(rows.map((m) => missionSummary(user, m, now)), input);
 }
 
 // Explicitly rebuild own snapshots. Never expose raw event payloads to Crew.

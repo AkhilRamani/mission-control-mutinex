@@ -13,7 +13,7 @@ import { useTestDatabase } from './database.js';
 import { createApiClient } from './api-client.js';
 import { createCliRunner } from './cli-runner.js';
 
-const { runtime } = useTestDatabase();
+const { runtime, waitForLocks } = useTestDatabase();
 const tenantId = tenantIds.atlas;
 const ownerId = '10000000-0000-4000-8001-000000000003';
 const alex = '10000000-0000-4000-8003-000000000004', sam = '10000000-0000-4000-8003-000000000005';
@@ -336,13 +336,7 @@ describe('matching and consent', () => {
       await blocker.query('BEGIN');
       await blocker.query('SELECT id FROM crew WHERE id = $1 FOR UPDATE', [alex]);
       pending = client.request('atlas/alex', `/assignments/${own.id}/accept`, 'POST', { version: m.version });
-      let blocked = false;
-      for (let i = 0; i < 100; i++) {
-        const result = await runtime.pool.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND usename = current_user AND wait_event_type = 'Lock'");
-        if (result.rowCount) { blocked = true; break; }
-        await delay(10);
-      }
-      expect(blocked).toBe(true);
+      await waitForLocks();
       await delay(Math.max(0, +start - Date.now() + 50));
       await blocker.query('COMMIT');
       const response = await pending;

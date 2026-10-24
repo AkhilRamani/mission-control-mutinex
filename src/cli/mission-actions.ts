@@ -5,7 +5,7 @@ import { confirmRemoval, parseVersion } from './input.js';
 import { missionDetails } from './mission-output.js';
 import type { Mission } from './mission-output.js';
 
-export function registerApprovalCommands(missions: Command, context: CommandContext, print: Print) {
+export function registerMissionActions(missions: Command, context: CommandContext, print: Print) {
   missions.command('submit').description('Freeze a fully accepted, eligible roster for independent approval')
     .requiredOption('--mission <id>', 'draft mission ID')
     .requiredOption('--version <number>', 'mission version you reviewed', parseVersion).action(async (opts) => {
@@ -39,6 +39,22 @@ export function registerApprovalCommands(missions: Command, context: CommandCont
         const { request } = await context();
         await confirmRemoval(`${action === 'reject' ? 'Reject' : 'Withdraw'} mission ${opts.mission} and reset all consent?`, Boolean(opts.yes));
         const result = await request<Mission>(`/missions/${encodeURIComponent(opts.mission)}/${action}`, 'POST', { version: opts.version, reason: opts.reason });
+        print(result, missionDetails(result));
+      });
+  }
+  for (const action of ['cancel', 'complete'] as const) {
+    const command = missions.command(action).description(action === 'cancel'
+      ? 'Owner/Director: cancel and release the whole booking, including elapsed hours'
+      : 'Owner/Director: complete at/after the scheduled end, retaining bookings');
+    if (action === 'cancel') command.requiredOption('--reason <text>', 'reason recorded in planner-visible history');
+    command.requiredOption('--mission <id>', 'mission ID')
+      .requiredOption('--version <number>', 'mission version you reviewed', parseVersion)
+      .option('--yes', 'confirm without prompting').action(async (opts) => {
+        const { request } = await context();
+        await confirmRemoval(`${action === 'cancel' ? 'Cancel' : 'Complete'} mission ${opts.mission}? This is final.`, Boolean(opts.yes));
+        const result = await request<Mission>(`/missions/${encodeURIComponent(opts.mission)}/${action}`, 'POST', {
+          version: opts.version, ...(action === 'cancel' ? { reason: opts.reason } : {}),
+        });
         print(result, missionDetails(result));
       });
   }

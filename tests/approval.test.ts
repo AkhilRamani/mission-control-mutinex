@@ -13,7 +13,7 @@ import { useTestDatabase } from './database.js';
 import { createApiClient } from './api-client.js';
 import { createCliRunner } from './cli-runner.js';
 
-const { runtime } = useTestDatabase();
+const { runtime, waitForLocks } = useTestDatabase();
 const alex = '10000000-0000-4000-8003-000000000004', sam = '10000000-0000-4000-8003-000000000005';
 const pilot = '10000000-0000-4000-8002-000000000001', medical = '10000000-0000-4000-8002-000000000002';
 const alexWindow = '10000000-0000-4000-8004-000000000004';
@@ -234,17 +234,6 @@ describe('confirmed-work profile protection', () => {
     await client.ok('atlas/director', `/crew/${alex}`, 'PATCH', { active: false });
   });
 });
-
-// Observe real PostgreSQL lock waits rather than depending on request timing.
-async function waitForLocks(count = 1) {
-  const deadline = Date.now() + 3000;
-  while (Date.now() < deadline) {
-    const result = await runtime.pool.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND usename = current_user AND wait_event_type = 'Lock'");
-    if ((result.rowCount ?? 0) >= count) return;
-    await delay(10);
-  }
-  throw new Error(`Expected ${count} blocked requests`);
-}
 
 describe('approval concurrency', () => {
   it('allows exactly one conflicting approval and keeps every losing assignment accepted', async () => {

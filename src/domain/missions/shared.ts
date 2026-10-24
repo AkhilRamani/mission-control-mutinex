@@ -3,6 +3,7 @@ import type { Database, Transaction } from '../../db/client.js';
 import { assignments, crew, missionEvents, missions, positions, positionSkills, skills } from '../../db/schema.js';
 import type { Identity } from '../auth.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { missionPhase } from '../time.js';
 
 export const currentStates = ['proposed', 'accepted', 'confirmed'] as const;
 export const missionFields = {
@@ -87,9 +88,9 @@ export async function readAssignments(tx: Transaction, user: Identity, missionId
     .where(and(eq(assignments.tenantId, user.tenantId), eq(assignments.missionId, missionId),
       user.role === 'crew' ? eq(crew.userId, user.id) : undefined)).orderBy(assignments.id);
 }
-export function missionSummary(user: Identity, mission: Mission) {
+export function missionSummary(user: Identity, mission: Mission, now = new Date()) {
   const { ownerId, ...publicFields } = mission;
-  return { ...publicFields, ...(user.role === 'crew' ? {} : { ownerId }) };
+  return { ...publicFields, phase: missionPhase(mission, now), ...(user.role === 'crew' ? {} : { ownerId }) };
 }
 export async function readMissionView(tx: Transaction, user: Identity, mission: Mission) {
   const visiblePositions = await readPositions(tx, user, mission.id);
@@ -118,9 +119,9 @@ type Event = (
   | { kind: 'mission_updated'; payload: { before: PlanSnapshot; after: PlanSnapshot } }
   | { kind: 'position_added'; payload: { position: PositionSnapshot } }
   | { kind: 'position_updated' | 'position_removed'; payload: { before: PositionSnapshot; after: PositionSnapshot } }
-  | { kind: 'proposals_updated' | 'mission_submitted' | 'mission_approved'; payload: { assignmentChanges?: AssignmentChange[] } }
+  | { kind: 'proposals_updated' | 'mission_submitted' | 'mission_approved' | 'mission_completed'; payload: { assignmentChanges?: AssignmentChange[] } }
   | { kind: 'assignment_responded'; payload: { action: 'accept' | 'decline' | 'retract' } }
-  | { kind: 'mission_withdrawn' | 'mission_rejected'; payload: { reason: string } }
+  | { kind: 'mission_withdrawn' | 'mission_rejected' | 'mission_cancelled'; payload: { reason: string } }
 ) & { payload: { assignmentChanges?: AssignmentChange[] } };
 type MissionPatch = Partial<Pick<Mission, 'title' | 'brief' | 'start' | 'end' | 'state'>>;
 

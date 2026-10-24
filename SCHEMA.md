@@ -1,6 +1,6 @@
 # Database schema
 
-Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Implemented through step 5; operation follows in step 6.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
+Full target alongside [DESIGN.md](DESIGN.md) (rules) and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) (sequence). **Implemented through step 6.** Current definitions: [schema.ts](src/db/schema.ts) and [migrations](drizzle/). Keep this reference aligned with implementation; record departures in [DESIGN-DEVIATIONS.md](DESIGN-DEVIATIONS.md).
 
 ## Conventions
 
@@ -56,7 +56,7 @@ Table columns below extend the common columns.
 | `assignments` / step 4 | `mission_id uuid`, `position_id uuid`, `crew_id uuid`, `state assignment_state = 'proposed'`, `responded_at timestamptz?`, `booked_start timestamptz?`, `booked_end timestamptz?` | One row per proposal attempt; booking constraints below. |
 | `mission_events` / step 3, extended in steps 4–6 | `mission_id uuid`, `mission_version integer`, `actor_id uuid`, `kind text`, `occurred_at timestamptz = clock_timestamp()`, `payload jsonb` | `UQ(tenant_id,mission_id,mission_version)`; version ≥ 1; `jsonb_typeof(payload) = 'object'`. Append-only. |
 
-- `mission_state`: `draft`, `submitted`, `approved`, `completed`, `cancelled`. Active phase is derived; rejection returns to draft.
+- `mission_state`: `draft`, `submitted`, `approved`, `completed`, `cancelled`. Approved phase is derived (`scheduled`, `active`, `awaiting_completion`), never stored; other states have no phase. Rejection returns to draft.
 - `assignment_state`: `proposed`, `accepted`, `declined`, `confirmed`, `withdrawn`, `released`.
 
 Under the mission lock, allocate `coalesce(max(ordinal),0) + 1`, including removed positions. Retain accounts, missions, positions and assignment attempts. Draft requirement joins may change; events preserve historical values and approval/proposal details.
